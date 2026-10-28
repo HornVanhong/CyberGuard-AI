@@ -38,7 +38,7 @@ class ScanRepository:
             conn.close()
 
     def _init_db(self) -> None:
-        """Initializes tables and indexes."""
+        """Initializes tables and indexes, with backward-compatible migrations."""
         with self._get_connection() as conn:
             conn.execute(
                 """
@@ -54,10 +54,16 @@ class ScanRepository:
                     risk_level TEXT NOT NULL,
                     score INTEGER DEFAULT 0,
                     findings_count INTEGER DEFAULT 0,
-                    scanner_summary TEXT NOT NULL
+                    scanner_summary TEXT NOT NULL,
+                    ai_explanation TEXT
                 );
                 """
             )
+            # Check if ai_explanation column exists in existing DB
+            columns = [row["name"] for row in conn.execute("PRAGMA table_info(scans);").fetchall()]
+            if "ai_explanation" not in columns:
+                conn.execute("ALTER TABLE scans ADD COLUMN ai_explanation TEXT;")
+
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans (user_id, created_at DESC);
@@ -76,8 +82,8 @@ class ScanRepository:
             INSERT INTO scans (
                 scan_id, user_id, user_name, filename_sanitized, file_size,
                 sha256, created_at, verdict, risk_level, score,
-                findings_count, scanner_summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                findings_count, scanner_summary, ai_explanation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         with self._get_connection() as conn:
             conn.execute(
@@ -95,16 +101,41 @@ class ScanRepository:
                     record.score,
                     record.findings_count,
                     record.scanner_summary,
+                    record.ai_explanation,
                 ),
             )
             conn.commit()
+
+    def update_ai_explanation(self, scan_id: str, ai_explanation: str) -> None:
+        """Updates the AI explanation for a scan record."""
+        query = "UPDATE scans SET ai_explanation = ? WHERE scan_id = ?;"
+        with self._get_connection() as conn:
+            conn.execute(query, (ai_explanation, scan_id))
+            conn.commit()
+
+    def get_latest_user_scan(self, user_id: int) -> Optional[ScanRecord]:
+        """Retrieves the most recent scan record for the given user."""
+        query = """
+            SELECT scan_id, user_id, user_name, filename_sanitized, file_size,
+                   sha256, created_at, verdict, risk_level, score,
+                   findings_count, scanner_summary, ai_explanation
+            FROM scans
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1;
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(query, (user_id,)).fetchone()
+            if row:
+                return self._row_to_record(row)
+            return None
 
     def get_user_history(self, user_id: int, limit: int = 10, offset: int = 0) -> List[ScanRecord]:
         """Retrieves scan history strictly isolated to the specified user_id."""
         query = """
             SELECT scan_id, user_id, user_name, filename_sanitized, file_size,
                    sha256, created_at, verdict, risk_level, score,
-                   findings_count, scanner_summary
+                   findings_count, scanner_summary, ai_explanation
             FROM scans
             WHERE user_id = ?
             ORDER BY created_at DESC
@@ -119,7 +150,7 @@ class ScanRepository:
         query = """
             SELECT scan_id, user_id, user_name, filename_sanitized, file_size,
                    sha256, created_at, verdict, risk_level, score,
-                   findings_count, scanner_summary
+                   findings_count, scanner_summary, ai_explanation
             FROM scans
             WHERE scan_id = ? AND user_id = ?;
         """
@@ -134,7 +165,7 @@ class ScanRepository:
         query = """
             SELECT scan_id, user_id, user_name, filename_sanitized, file_size,
                    sha256, created_at, verdict, risk_level, score,
-                   findings_count, scanner_summary
+                   findings_count, scanner_summary, ai_explanation
             FROM scans
             WHERE sha256 = ?
             ORDER BY created_at DESC
@@ -170,6 +201,8 @@ class ScanRepository:
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> ScanRecord:
+        keys = row.keys()
+        ai_exp = row["ai_explanation"] if "ai_explanation" in keys else None
         return ScanRecord(
             scan_id=row["scan_id"],
             user_id=row["user_id"],
@@ -183,4 +216,5 @@ class ScanRepository:
             score=row["score"],
             findings_count=row["findings_count"],
             scanner_summary=row["scanner_summary"],
+            ai_explanation=ai_exp,
         )

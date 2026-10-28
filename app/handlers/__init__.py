@@ -5,6 +5,9 @@ from app.handlers.status import status_handler
 from app.handlers.history import history_handler, cleardata_handler
 from app.handlers.privacy import privacy_handler
 from app.handlers.scan import scan_command_handler, document_upload_handler
+from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
+from app.handlers.explain import explain_handler
+from app.handlers.report import report_handler, download_report_callback
 from app.handlers.callbacks import callback_router
 
 __all__ = [
@@ -16,5 +19,11 @@ __all__ = [
     "privacy_handler",
     "scan_command_handler",
     "document_upload_handler",
+    "ask_handler",
+    "ask_text_message_handler",
+    "cancel_handler",
+    "explain_handler",
+    "report_handler",
+    "download_report_callback",
     "callback_router",
 ]

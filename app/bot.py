@@ -27,6 +27,9 @@ from app.handlers.privacy import privacy_handler
 from app.handlers.scan import document_upload_handler, scan_command_handler
 from app.handlers.start import start_handler
 from app.handlers.status import status_handler
+from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
+from app.handlers.explain import explain_handler
+from app.handlers.report import report_handler
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
 from app.security.rate_limiter import RateLimiter
@@ -77,8 +80,9 @@ def build_application() -> Application:
     ai = AIService(
         api_key=settings.GEMINI_API_KEY,
         model=settings.GEMINI_MODEL,
-        timeout=settings.AI_TIMEOUT,
-        enabled=settings.AI_ENABLED,
+        timeout=settings.effective_gemini_timeout,
+        max_output_tokens=settings.GEMINI_MAX_OUTPUT_TOKENS,
+        enabled=settings.is_gemini_enabled,
     )
 
     # Build Application
@@ -104,6 +108,18 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("history", partial(history_handler, repo=repo)))
     app.add_handler(CommandHandler("cleardata", partial(cleardata_handler, repo=repo)))
     app.add_handler(CommandHandler("privacy", privacy_handler))
+    app.add_handler(CommandHandler("ask", partial(ask_handler, ai=ai, repo=repo)))
+    app.add_handler(CommandHandler("explain", partial(explain_handler, ai=ai, repo=repo)))
+    app.add_handler(CommandHandler("report", partial(report_handler, repo=repo)))
+    app.add_handler(CommandHandler("cancel", cancel_handler))
+
+    # Register Interactive Q&A Text Message Handler
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            partial(ask_text_message_handler, ai=ai, repo=repo),
+        )
+    )
 
     # Register Document / Media Upload Handler
     doc_filter = filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO

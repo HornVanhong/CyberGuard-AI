@@ -26,6 +26,7 @@ class ScanRecord:
     score: int
     findings_count: int
     scanner_summary: str  # JSON-encoded summary of findings
+    ai_explanation: Optional[str] = None  # JSON-encoded AI explanation
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -43,6 +44,7 @@ class ScanRecord:
         score: int = 0,
         findings_count: int = 0,
         scanner_summary: str = "{}",
+        ai_explanation: Optional[str] = None,
         user_name: Optional[str] = None,
         created_at: Optional[str] = None,
     ) -> ScanRecord:
@@ -59,4 +61,5 @@ class ScanRecord:
             score=score,
             findings_count=findings_count,
             scanner_summary=scanner_summary,
+            ai_explanation=ai_explanation,
         )

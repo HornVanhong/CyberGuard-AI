@@ -99,11 +99,28 @@ class Settings(BaseSettings):
     )
     VIRUSTOTAL_TIMEOUT: float = Field(default=15.0, description="VirusTotal HTTP timeout in seconds")
 
-    # AI Security Explanations (Optional Google Gemini)
-    AI_ENABLED: bool = Field(default=False, description="Enable AI security explanations")
+    # AI Security Explanations (Google Gemini using official google-genai SDK)
+    GEMINI_ENABLED: bool = Field(default=False, description="Enable Gemini AI integration")
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key")
     GEMINI_MODEL: str = Field(default="gemini-2.5-flash", description="Gemini model identifier")
-    AI_TIMEOUT: float = Field(default=25.0, description="AI explanation timeout in seconds")
+    GEMINI_TIMEOUT: float = Field(default=25.0, description="Gemini API timeout in seconds")
+    GEMINI_MAX_OUTPUT_TOKENS: int = Field(
+        default=1500, description="Maximum output tokens for Gemini responses"
+    )
+
+    # Backwards compatibility aliases
+    AI_ENABLED: bool = Field(default=False, description="Legacy alias for GEMINI_ENABLED")
+    AI_TIMEOUT: float = Field(default=25.0, description="Legacy alias for GEMINI_TIMEOUT")
+
+    @property
+    def is_gemini_enabled(self) -> bool:
+        """Determines if Gemini is enabled and properly configured with an API key."""
+        return (self.GEMINI_ENABLED or self.AI_ENABLED) and bool(self.GEMINI_API_KEY.strip())
+
+    @property
+    def effective_gemini_timeout(self) -> float:
+        """Returns the configured Gemini timeout."""
+        return self.GEMINI_TIMEOUT or self.AI_TIMEOUT
 
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = Field(

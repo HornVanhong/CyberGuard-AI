@@ -10,6 +10,10 @@ from app.handlers.start import start_handler
 from app.handlers.help import help_handler
 from app.handlers.privacy import privacy_handler
 from app.handlers.history import history_handler, cleardata_handler
+from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
+from app.handlers.explain import explain_handler
+from app.handlers.report import report_handler, download_report_callback
+from app.services.ai_service import AIService, AIExplanationResult
 
 
 def _create_mock_update(user_id=123, username="tester"):
@@ -95,3 +99,132 @@ async def test_history_and_clear_handlers(test_db_path):
     # History is now empty again
     await history_handler(update, context, repo=repo)
     assert "no scan history" in message.reply_text.call_args[1]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_ask_handler_with_query(test_db_path):
+    repo = ScanRepository(db_path=test_db_path)
+    ai = MagicMock(spec=AIService)
+    ai.answer_security_question = AsyncMock(return_value="A virus attaches to files; a Trojan disguises itself.")
+
+    update, user, message = _create_mock_update(user_id=777)
+    context = MagicMock()
+    context.args = ["What", "is", "a", "Trojan?"]
+
+    # Thinking reply mock
+    thinking_msg = MagicMock(spec=Message)
+    thinking_msg.edit_text = AsyncMock()
+    message.reply_text.return_value = thinking_msg
+
+    await ask_handler(update, context, ai=ai, repo=repo)
+    assert message.reply_text.called
+    assert thinking_msg.edit_text.called
+    assert "Trojan disguises itself" in thinking_msg.edit_text.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_ask_handler_interactive_prompt_and_cancel():
+    update, user, message = _create_mock_update(user_id=777)
+    context = MagicMock()
+    context.args = []
+    context.user_data = {}
+
+    # Calling without query enters interactive prompt
+    await ask_handler(update, context, ai=MagicMock(), repo=MagicMock())
+    assert context.user_data.get("waiting_for_ask") is True
+    assert "question" in message.reply_text.call_args[0][0].lower()
+
+    # Cancel resets state
+    await cancel_handler(update, context)
+    assert context.user_data.get("waiting_for_ask") is False
+    assert "cancelled" in message.reply_text.call_args[0][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_explain_handler_with_latest_scan(test_db_path):
+    repo = ScanRepository(db_path=test_db_path)
+    repo.save_scan(
+        ScanRecord.create(
+            scan_id="explain-scan-1",
+            user_id=555,
+            filename_sanitized="suspicious.pdf",
+            file_size=5000,
+            sha256="cc"*32,
+            verdict="SUSPICIOUS",
+            risk_level="MEDIUM",
+            scanner_summary='{"findings": ["Embedded JS"], "recommendations": ["Do not open"]}',
+        )
+    )
+
+    ai = MagicMock(spec=AIService)
+    mock_ai_res = AIExplanationResult(
+        success=True,
+        summary="Document contains suspicious JavaScript.",
+        detected_indicators=["Embedded JavaScript"],
+        explanation_of_indicators=[{"indicator": "Embedded JS", "explanation": "Executes upon opening."}],
+        severity="MEDIUM",
+        confidence_level="High",
+        potential_impact="Browser exploitation",
+        recommended_defensive_actions=["Delete"],
+        important_uncertainties="None",
+        statement_of_scope="PDF static analysis",
+        disclaimer="AI assessment disclaimer.",
+    )
+    ai.generate_explanation = AsyncMock(return_value=mock_ai_res)
+
+    update, user, message = _create_mock_update(user_id=555)
+    context = MagicMock()
+    context.args = []
+
+    thinking_msg = MagicMock(spec=Message)
+    thinking_msg.edit_text = AsyncMock()
+    message.reply_text.return_value = thinking_msg
+
+    await explain_handler(update, context, ai=ai, repo=repo)
+    assert thinking_msg.edit_text.called
+    reply_text = thinking_msg.edit_text.call_args[0][0]
+    assert "suspicious.pdf" in reply_text
+    assert "Browser exploitation" in reply_text
+
+
+@pytest.mark.asyncio
+async def test_report_handler_and_download(test_db_path):
+    repo = ScanRepository(db_path=test_db_path)
+    repo.save_scan(
+        ScanRecord.create(
+            scan_id="report-scan-1",
+            user_id=444,
+            filename_sanitized="report_doc.pdf",
+            file_size=4096,
+            sha256="dd"*32,
+            verdict="NO_KNOWN_THREAT_DETECTED",
+            risk_level="LOW",
+            scanner_summary='{"findings": [], "recommendations": ["Safe to open"]}',
+        )
+    )
+
+    update, user, message = _create_mock_update(user_id=444)
+    context = MagicMock()
+    context.args = []
+
+    await report_handler(update, context, repo=repo)
+    assert message.reply_text.called
+    report_text = message.reply_text.call_args[0][0]
+    assert "report_doc.pdf" in report_text
+    assert "SECURITY REPORT" in report_text
+
+    # Test download callback
+    query = MagicMock()
+    query.data = "dl_rep:report-scan-1"
+    query.from_user = user
+    query.answer = AsyncMock()
+    query.message = MagicMock()
+    query.message.reply_document = AsyncMock()
+
+    cb_update = MagicMock(spec=Update)
+    cb_update.callback_query = query
+
+    await download_report_callback(cb_update, context, repo=repo)
+    assert query.message.reply_document.called
+    doc_args = query.message.reply_document.call_args.kwargs
+    assert "cyberguard_report_" in doc_args["document"].name

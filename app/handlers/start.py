@@ -38,12 +38,17 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("English 🇬🇧", callback_data="lang:en"),
-            InlineKeyboardButton("ភាសាខ្មែរ 🇰🇭", callback_data="lang:km"),
+            InlineKeyboardButton(t("btn_scan", lang=lang), callback_data="cmd:scan"),
+            InlineKeyboardButton(t("btn_ask", lang=lang), callback_data="cmd:ask"),
         ],
         [
-            InlineKeyboardButton("📚 Help / Guide", callback_data="cmd:help"),
-            InlineKeyboardButton("⚙️ System Status", callback_data="cmd:status"),
+            InlineKeyboardButton(t("btn_history", lang=lang), callback_data="cmd:history"),
+            InlineKeyboardButton(t("btn_help", lang=lang), callback_data="cmd:help"),
+            InlineKeyboardButton(t("btn_privacy", lang=lang), callback_data="cmd:privacy"),
+        ],
+        [
+            InlineKeyboardButton("English 🇬🇧", callback_data="lang:en"),
+            InlineKeyboardButton("ភាសាខ្មែរ 🇰🇭", callback_data="lang:km"),
         ],
     ])
 

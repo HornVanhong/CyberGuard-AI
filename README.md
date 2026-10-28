@@ -2,7 +2,7 @@
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Tests: 69 Passed](https://img.shields.io/badge/Tests-69%20Passed-brightgreen.svg)]()
+[![Tests: 80 Passed](https://img.shields.io/badge/Tests-80%20Passed-brightgreen.svg)]()
 [![Security: Isolated Container](https://img.shields.io/badge/Security-Non--Root%20%7C%20Read--Only-red.svg)]()
 
 **CyberGuard AI** is a production-grade, secure, multi-engine Telegram bot designed to inspect uploaded files for malware, viruses, suspicious payloads, malicious scripts, phishing indicators, and dangerous macros **without ever executing untrusted files on the host system**.
@@ -20,7 +20,13 @@
 - **Decompression Bomb & Safe Archive Inspection**: Inspects ZIP, TAR, and GZ archives strictly in memory. Enforces 100:1 ratio limits (Zip Bomb defense), max entry limits, max uncompressed byte limits, double-extension trick detection (`document.pdf.exe`), and strict path traversal protection (`../`, absolute paths, symlinks).
 - **Microsoft Office Analysis**: Inspects modern OpenXML packages (`.docx`, `.xlsx`, `.pptx`, `.docm`, `.xlsm`) and legacy OLE files. Detects hidden VBA macros in declared macro-free files, auto-exec hooks (`AutoOpen`, `Workbook_Open`), embedded OLE objects, and suspicious system API invocations (`Shell`, `WScript.Shell`).
 - **VirusTotal Threat Intelligence (Optional)**: Performs zero-disclosure cryptographic SHA-256 hash queries. Respects rate limits, includes local TTL caching, and **never uploads raw files without explicit user consent**.
-- **AI-Powered Explanations (Optional Google Gemini)**: Translates technical security indicators into simple, non-technical explanations and safety advice. Implements anti-prompt-injection safeguards and **strictly prevents AI from overturning deterministic scanner verdicts**.
+- **AI-Powered Explanations & Assistant (Google Gemini via official `google-genai` SDK)**:
+  - Generates schema-validated structured security analysis (`SecurityExplanationSchema`: indicators, severity, confidence, defensive actions, uncertainties, and scope).
+  - Interactive cybersecurity assistant via `/ask` with automatic latest scan context awareness.
+  - Deep-dive scan explanations on demand via `/explain [scan_id]`.
+  - Exportable, downloadable plain-text forensic scan reports via `/report [scan_id]`.
+  - Bilingual support in **English** and **Khmer (ភាសាខ្មែរ)**.
+  - Implements anti-prompt-injection safeguards (input truncation, schema enforcement) and **strictly prevents AI from overturning deterministic scanner verdicts**.
 
 ### 2. Privacy & User Experience
 - **Zero File Persistence**: Uploads are downloaded into an isolated sandbox directory (`temp_uploads/{scan_id}`) and guaranteed deleted in a `finally` block immediately upon scan completion.
@@ -42,10 +48,13 @@ cyberguard-ai/
 │   ├── i18n.py                   # Bilingual localization (English & Khmer)
 │   ├── handlers/
 │   │   ├── __init__.py
-│   │   ├── start.py              # /start handler & welcome keyboard
+│   │   ├── start.py              # /start handler & welcome quick-action keyboard
 │   │   ├── help.py               # /help guide & risk explanation
 │   │   ├── scan.py               # Full asynchronous file scanning pipeline
-│   │   ├── status.py             # Engine health & signature status
+│   │   ├── ask.py                # /ask AI cybersecurity assistant (with scan context)
+│   │   ├── explain.py            # /explain [scan_id] deep-dive analysis
+│   │   ├── report.py             # /report [scan_id] downloadable text report
+│   │   ├── status.py             # Engine health, Gemini & signature status
 │   │   ├── history.py            # /history and /cleardata handlers
 │   │   ├── privacy.py            # /privacy transparency notice
 │   │   └── callbacks.py          # Inline button callback router
@@ -137,9 +146,11 @@ cp .env.example .env
 | `VIRUSTOTAL_ENABLED`| bool | `false` | Enable VirusTotal threat intelligence lookup |
 | `VIRUSTOTAL_API_KEY`| string | `""` | VirusTotal API v3 key |
 | `VIRUSTOTAL_CACHE_TTL`| int | `3600` | In-memory cache time-to-live in seconds |
-| `AI_ENABLED` | bool | `false` | Enable Google Gemini security explanations |
-| `GEMINI_API_KEY` | string | `""` | Google Gemini API key |
-| `GEMINI_MODEL` | string | `gemini-2.5-flash`| Gemini model identifier |
+| `GEMINI_ENABLED` / `AI_ENABLED` | bool | `false` | Enable Google Gemini security explanations & assistant |
+| `GEMINI_API_KEY` | string | `""` | Google Gemini API key (via official `google-genai` SDK) |
+| `GEMINI_MODEL` | string | `gemini-2.5-flash`| Gemini model identifier (e.g. `gemini-2.5-flash`, `gemini-1.5-pro`) |
+| `GEMINI_TIMEOUT` / `AI_TIMEOUT` | float | `30.0` | Request timeout in seconds for Gemini API calls |
+| `GEMINI_MAX_OUTPUT_TOKENS` | int | `1024` | Maximum output tokens generated per request |
 | `RATE_LIMIT_REQUESTS`| int | `5` | Maximum scans allowed per user in the time window |
 | `RATE_LIMIT_WINDOW_SECONDS`| int | `60` | Time window in seconds |
 | `DEFAULT_LANGUAGE` | string | `en` | Default UI language (`en` or `km`) |
@@ -155,9 +166,13 @@ cp .env.example .env
 3. Copy the HTTP API token provided by BotFather.
 4. Set the bot commands in BotFather by sending `/setcommands` and pasting:
    ```text
-   start - Introduce the bot and capabilities
+   start - Introduce the bot and quick actions
    scan - Prompt to upload a file for analysis
-   status - Check scanning engine health & signatures
+   ask - Ask cybersecurity questions (with latest scan context)
+   explain - Get AI deep-dive explanation for a scan ID
+   report - Download plain-text audit report for a scan ID
+   cancel - Cancel active question or session
+   status - Check scanning engine health, Gemini & signatures
    history - View your recent scan records
    cleardata - Permanently erase your scan history
    privacy - Review data retention and privacy policies
@@ -254,33 +269,37 @@ The automated test suite covers all 17 required scenarios:
 - Telegram authorization whitelist
 - SQLite database user data isolation and `/cleardata` erasure
 - Sandbox creation and guaranteed post-scan cleanup
-- AI service prompt injection defense and offline fallback
-- Bilingual Telegram security report formatting (English & Khmer)
+- AI service structured schema validation (`google-genai`), prompt injection defense, quota (429) & timeout resilience, and general/scan-context Q&A in English and Khmer
+- Telegram handlers for `/start`, `/scan`, `/ask`, `/explain`, `/report`, `/cancel`, `/status`, `/history`, and `/cleardata`
 
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\Personal Project\CyberGuard AI
+configfile: pyproject.toml
+testpaths: tests
 plugins: anyio-4.15.1, asyncio-1.4.1
-collected 69 items
+asyncio: mode=Mode.AUTO, debug=False
+collected 80 items
 
-tests/test_ai_service.py .................................. PASSED [  4%]
-tests/test_archive_analyzer.py ............................ PASSED [ 11%]
-tests/test_bot_handlers.py ................................ PASSED [ 17%]
-tests/test_clamav_scanner.py .............................. PASSED [ 27%]
-tests/test_database.py .................................... PASSED [ 31%]
-tests/test_file_analyzer.py ............................... PASSED [ 39%]
-tests/test_hashing.py ..................................... PASSED [ 43%]
-tests/test_office_analyzer.py ............................. PASSED [ 47%]
-tests/test_pdf_analyzer.py ................................ PASSED [ 52%]
-tests/test_rate_limiter.py ................................ PASSED [ 56%]
-tests/test_report_service.py .............................. PASSED [ 62%]
-tests/test_risk_engine.py ................................. PASSED [ 69%]
-tests/test_script_analyzer.py ............................. PASSED [ 76%]
-tests/test_validation_and_cleanup.py ...................... PASSED [ 86%]
-tests/test_virustotal_service.py .......................... PASSED [ 94%]
-tests/test_yara_scanner.py ................................ PASSED [100%]
+tests\test_ai_service.py ..........                                      [ 12%]
+tests\test_archive_analyzer.py .....                                     [ 18%]
+tests\test_bot_handlers.py ........                                      [ 28%]
+tests\test_clamav_scanner.py .......                                     [ 37%]
+tests\test_database.py ...                                               [ 41%]
+tests\test_file_analyzer.py .....                                        [ 47%]
+tests\test_hashing.py ...                                                [ 51%]
+tests\test_office_analyzer.py ...                                        [ 55%]
+tests\test_pdf_analyzer.py ...                                           [ 58%]
+tests\test_rate_limiter.py ...                                           [ 62%]
+tests\test_report_service.py ....                                        [ 67%]
+tests\test_risk_engine.py .....                                          [ 73%]
+tests\test_script_analyzer.py .....                                      [ 80%]
+tests\test_validation_and_cleanup.py .......                             [ 88%]
+tests\test_virustotal_service.py .....                                   [ 95%]
+tests\test_yara_scanner.py ....                                          [100%]
 
-============================== 69 passed in 6.27s ==============================
+============================= 80 passed in 14.76s =============================
 ```
 
 ---

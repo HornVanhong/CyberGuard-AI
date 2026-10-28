@@ -282,7 +282,7 @@ async def document_upload_handler(
             scan_id=scan_id,
             sha256=hashes.sha256,
             vt_result=vt_result,
-            ai_enabled=settings.AI_ENABLED,
+            ai_enabled=settings.is_gemini_enabled,
             vt_enabled=settings.VIRUSTOTAL_ENABLED,
             lang=lang,
         )

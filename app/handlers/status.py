@@ -47,8 +47,13 @@ async def status_handler(
     # 3. VirusTotal status
     vt_status = "🟢 Configured" if vt.is_configured else "⚪ Not Configured"
 
-    # 4. AI Service status
-    ai_status = "🟢 Configured" if ai.is_configured else "⚪ Not Configured"
+    # 4. AI Service status (Google Gemini via official google-genai SDK)
+    if ai.enabled and ai.is_configured:
+        ai_status = f"🟢 Ready (SDK: google-genai | Model: {ai.model})"
+    elif ai.is_configured:
+        ai_status = "⚪ Disabled in configuration (GEMINI_ENABLED=false)"
+    else:
+        ai_status = "⚪ Not Configured (Missing GEMINI_API_KEY)"
 
     # 5. Database status
     try:

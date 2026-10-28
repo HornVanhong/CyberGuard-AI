@@ -49,11 +49,15 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         ),
         "help_commands": (
             "⌨️ *Available Commands:*\n"
-            "• /scan — Prompt file upload\n"
-            "• /status — Check scanning engine health & signatures\n"
+            "• /scan — Upload and scan a file for threats\n"
+            "• /ask [question] — Ask AI any cybersecurity question or inquire about your scan\n"
+            "• /explain [scan_id] — Detailed Gemini AI explanation of your latest scan\n"
+            "• /report [scan_id] — Retrieve or download your scan report\n"
+            "• /status — Check scanning engines health & Gemini configuration\n"
             "• /history — View your recent scan records\n"
             "• /privacy — Review data retention & privacy policies\n"
             "• /cleardata — Delete your scan history records\n"
+            "• /cancel — Cancel any ongoing operation\n"
             "• /lang — Switch language (English / ខ្មែរ)\n"
             "• /help — Show this help message"
         ),
@@ -126,12 +130,27 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "report_disclaimer": "⚠️ *Note:* No detection does not guarantee that a file is safe.",
 
         # Button Labels
+        "btn_scan": "📤 Scan File",
+        "btn_ask": "🤖 Ask AI",
+        "btn_history": "📜 History",
+        "btn_help": "📚 Help",
+        "btn_privacy": "🔐 Privacy",
         "btn_ai_explain": "🤖 Explain with AI",
         "btn_vt_lookup": "🌐 VirusTotal Lookup",
         "btn_delete_history": "🗑️ Clear My History",
+        "btn_download_report": "📥 Download Report (.txt)",
         "history_empty": "📭 You have no scan history records.",
         "history_title": "📜 *Your Recent Scan History:*",
         "history_cleared": "✅ Your scan history records have been completely erased.",
+
+        # Ask & Explain & Report Commands
+        "ask_prompt": "💬 *CyberGuard AI Assistant*\n\nType your cybersecurity question below (or ask about your recent scan):",
+        "ask_thinking": "🤔 Consulting Gemini AI...",
+        "ask_cancelled": "❌ Operation cancelled.",
+        "explain_no_scan": "⚠️ No scan records found. Please upload a file with `/scan` first.",
+        "explain_thinking": "🤖 Generating detailed security explanation with Gemini AI...",
+        "report_no_scan": "⚠️ No scan records found. Please upload a file with `/scan` first.",
+        "report_not_found": "⚠️ Scan ID `{scan_id}` was not found in your records.",
     },
     "km": {
         # Khmer Translations
@@ -173,10 +192,14 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "help_commands": (
             "⌨️ *ពាក្យបញ្ជាដែលមាន:*\n"
             "• /scan — ចាប់ផ្តើមស្កេនឯកសារ\n"
-            "• /status — ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន\n"
+            "• /ask [សំណួរ] — សួរ AI ពីបញ្ហាសន្តិសុខសាយប័រ ឬការស្កេនរបស់អ្នក\n"
+            "• /explain [scan_id] — ពន្យល់លម្អិតពីការស្កេនចុងក្រោយដោយ Gemini AI\n"
+            "• /report [scan_id] — ទាញយករបាយការណ៍ស្កេនពេញលេញ\n"
+            "• /status — ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន និង Gemini AI\n"
             "• /history — មើលប្រវត្តិស្កេនរបស់អ្នក\n"
             "• /privacy — អានគោលការណ៍ឯកជនភាព\n"
             "• /cleardata — លុបប្រវត្តិស្កេនរបស់អ្នកចោល\n"
+            "• /cancel — បោះបង់ប្រតិបត្តិការដែលកំពុងដំណើរការ\n"
             "• /lang — ផ្លាស់ប្តូរភាសា\n"
             "• /help — បង្ហាញជំនួយ"
         ),
@@ -238,12 +261,28 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "report_scan_id": "លេខសម្គាល់ស្កេន: `{scan_id}`",
         "report_disclaimer": "⚠️ *ចំណាំ:* មិនមានការរកឃើញ មិនមែនមានន័យថាឯកសារនេះមានសុវត្ថិភាព 100% នោះទេ។",
 
+        # Button Labels
+        "btn_scan": "📤 ស្កេនឯកសារ",
+        "btn_ask": "🤖 សួរ AI",
+        "btn_history": "📜 ប្រវត្តិ",
+        "btn_help": "📚 ជំនួយ",
+        "btn_privacy": "🔐 ឯកជនភាព",
         "btn_ai_explain": "🤖 ពន្យល់ដោយ AI",
         "btn_vt_lookup": "🌐 ពិនិត្យលើ VirusTotal",
         "btn_delete_history": "🗑️ លុបប្រវត្តិរបស់ខ្ញុំ",
+        "btn_download_report": "📥 ទាញយករបាយការណ៍ (.txt)",
         "history_empty": "📭 អ្នកមិនមានប្រវត្តិស្កេនឯកសារនៅឡើយទេ។",
         "history_title": "📜 *ប្រវត្តិស្កេនថ្មីៗរបស់អ្នក:*",
         "history_cleared": "✅ ប្រវត្តិស្កេនរបស់អ្នកត្រូវបានលុបចេញទាំងស្រុង។",
+
+        # Ask & Explain & Report Commands
+        "ask_prompt": "💬 *ជំនួយការ CyberGuard AI*\n\nសូមសួរសំណួររបស់អ្នកអំពីសន្តិសុខសាយប័រខាងក្រោម (ឬសួរអំពីការស្កេនថ្មីៗ):",
+        "ask_thinking": "🤔 កំពុងពិគ្រោះជាមួយ Gemini AI...",
+        "ask_cancelled": "❌ បានបោះបង់ប្រតិបត្តិការ។",
+        "explain_no_scan": "⚠️ មិនមានប្រវត្តិស្កេនសម្រាប់ពន្យល់ទេ។ សូមស្កេនឯកសារជាមុនដោយប្រើ `/scan`។",
+        "explain_thinking": "🤖 កំពុងបង្កើតការពន្យល់លម្អិតជាមួយ Gemini AI...",
+        "report_no_scan": "⚠️ មិនមានប្រវត្តិស្កេនទេ។ សូមស្កេនឯកសារជាមុនដោយប្រើ `/scan`។",
+        "report_not_found": "⚠️ មិនស្គាល់លេខសម្គាល់ស្កេន `{scan_id}` ក្នុងប្រវត្តិរបស់អ្នកទេ។",
     },
 }
 

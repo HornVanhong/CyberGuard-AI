@@ -201,12 +201,16 @@ class ReportService:
         if row:
             buttons.append(row)
 
-        # Clear data button
+        # Action buttons
         buttons.append([
+            InlineKeyboardButton(
+                text=t("btn_download_report", lang=lang),
+                callback_data=f"dl_rep:{scan_id}",
+            ),
             InlineKeyboardButton(
                 text=t("btn_delete_history", lang=lang),
                 callback_data="cmd_cleardata",
-            )
+            ),
         ])
 
         return InlineKeyboardMarkup(buttons)
