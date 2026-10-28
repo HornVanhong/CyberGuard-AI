@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.venv/
+venv/
+ENV/
+
+# Configuration & Secrets
+.env
+*.pem
+*.key
+*.token
+
+# Temporary uploads & SQLite Database
+temp_uploads/*
+!temp_uploads/.gitkeep
+data/*
+!data/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

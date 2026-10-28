@@ -1,0 +1,69 @@
+version: "3.9"
+
+services:
+  clamav:
+    image: clamav/clamav:latest
+    container_name: cyberguard-clamav
+    restart: unless-stopped
+    environment:
+      - CLAMD_CONF_MaxFileSize=25M
+      - CLAMD_CONF_StreamMaxLength=30M
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    networks:
+      - cyberguard-net
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "5"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1500M
+
+  cyberguard-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cyberguard-bot
+    restart: unless-stopped
+    depends_on:
+      clamav:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - CLAMAV_HOST=clamav
+      - CLAMAV_PORT=3310
+      - DATABASE_PATH=/app/data/cyberguard.db
+      - TEMP_DIR=/app/temp_uploads
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+      - /app/temp_uploads:rw,noexec,nosuid,size=200m
+    volumes:
+      - cyberguard_data:/app/data
+    networks:
+      - cyberguard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1000M
+
+networks:
+  cyberguard-net:
+    driver: bridge
+    internal: false
+
+volumes:
+  cyberguard_data:
+  clamav_signatures:
