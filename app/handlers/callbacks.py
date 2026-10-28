@@ -95,6 +95,12 @@ async def callback_router(
     elif data.startswith("dl_rep:"):
         await download_report_callback(update, context, repo=repo)
         return
+    elif data.startswith("ghidra:"):
+        scan_id = data.split(":", 1)[1]
+        context.args = [scan_id]
+        from app.handlers.ghidra import ghidra_handler
+        await ghidra_handler(update, context, repo=repo)
+        return
 
     # 3. AI Explanation request
     if data.startswith("ai_exp:"):

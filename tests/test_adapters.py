@@ -181,14 +181,81 @@ async def test_capa_non_pe_file(tmp_path):
 
 @pytest.mark.asyncio
 async def test_diec_unavailable_fallback():
+    with patch("app.scanners.executable_analyzer._PEFILE_AVAILABLE", False):
+        adapter = DiecAdapter(diec_path="/nonexistent/diec")
+        assert not adapter.is_available()
+        res = await adapter.scan(Path("test.exe"))
+        assert res.status == ScanStatus.UNAVAILABLE
+        assert "diec binary not found" in res.error_message
+
+
+@pytest.mark.asyncio
+async def test_diec_embedded_engine_non_pe(tmp_path):
+    txt_file = tmp_path / "sample.txt"
+    txt_file.write_text("Hello world", encoding="utf-8")
     adapter = DiecAdapter(diec_path="/nonexistent/diec")
+    assert adapter.is_available()  # Available via embedded pefile
+    res = await adapter.scan(txt_file)
+    assert res.status == ScanStatus.COMPLETED
+    assert res.severity == Severity.CLEAN
+
+
+# 6. Ghidra SRE & Decompiler Adapter Tests
+from app.scanners.ghidra_analyzer import GhidraAdapter
+
+
+@pytest.mark.asyncio
+async def test_ghidra_unavailable_fallback():
+    adapter = GhidraAdapter(ghidra_path="/nonexistent/analyzeHeadless")
+    # If Java or Ghidra is not installed, it safely returns UNAVAILABLE
     assert not adapter.is_available()
-    res = await adapter.scan(Path("test.exe"))
+    res = await adapter.scan(Path("sample.exe"))
     assert res.status == ScanStatus.UNAVAILABLE
-    assert "diec binary not found" in res.error_message
+    assert "not found" in res.error_message.lower()
 
 
-# 6. Scanner Orchestrator Integration Tests
+@pytest.mark.asyncio
+async def test_ghidra_mock_successful_analysis(tmp_path):
+    target_bin = tmp_path / "trojan_sim.bin"
+    target_bin.write_bytes(b"MZ\x90\x00" + b"\x00" * 100)
+
+    adapter = GhidraAdapter(ghidra_path="/mock/analyzeHeadless")
+    adapter.is_available = MagicMock(return_value=True)
+
+    mock_report = {
+        "program_name": "trojan_sim.bin",
+        "language_id": "x86:LE:64:default",
+        "compiler": "gcc",
+        "image_base": "0x400000",
+        "function_count": 42,
+        "dangerous_apis": [
+            {"api": "VirtualAllocEx", "address": "0x401020", "callers": ["inject_code"]},
+            {"api": "CreateRemoteThread", "address": "0x401050", "callers": ["main"]},
+            {"api": "WriteProcessMemory", "address": "0x401080", "callers": ["inject_code"]},
+        ],
+        "entry_function": "main",
+        "decompiled_code": "int main() {\n    VirtualAllocEx(...);\n    return 0;\n}",
+    }
+
+    async def fake_proc(*args, **kwargs):
+        # Write report_file
+        report_file_path = args[-1]
+        with open(report_file_path, "w", encoding="utf-8") as f:
+            json.dump(mock_report, f)
+        mock_p = MagicMock()
+        mock_p.returncode = 0
+        mock_p.communicate = AsyncMock(return_value=(b"Success", b""))
+        return mock_p
+
+    with patch("asyncio.create_subprocess_exec", side_effect=fake_proc):
+        res = await adapter.scan(target_bin)
+        assert res.status == ScanStatus.COMPLETED
+        assert res.severity == Severity.HIGH
+        assert any("High-Risk API" in f.title for f in res.findings)
+        assert getattr(res, "metadata", {}).get("function_count") == 42
+
+
+# 7. Scanner Orchestrator Integration Tests
 @pytest.mark.asyncio
 async def test_orchestrator_selective_execution_on_python_script(tmp_path):
     py_file = tmp_path / "test_secret.py"

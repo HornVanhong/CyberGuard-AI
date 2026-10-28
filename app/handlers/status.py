@@ -13,6 +13,7 @@ from app.scanners.oletools_analyzer import OletoolsAdapter
 from app.scanners.pdfid_analyzer import PDFiDAdapter
 from app.scanners.exiftool_analyzer import ExifToolAdapter
 from app.scanners.executable_analyzer import CapaAdapter, DiecAdapter
+from app.scanners.ghidra_analyzer import GhidraAdapter
 from app.scanners.gitleaks_analyzer import GitleaksAdapter
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
@@ -65,7 +66,8 @@ async def status_handler(
     pdfid_status = "🟢 Ready" if PDFiDAdapter().is_available() else "⚪ Not Installed"
     exif_status = "🟢 Ready" if ExifToolAdapter().is_available() else "⚪ Binary not in PATH"
     capa_status = "🟢 Ready" if CapaAdapter().is_available() else "⚪ Not Installed"
-    diec_status = "🟢 Ready" if DiecAdapter().is_available() else "⚪ Binary not in PATH"
+    diec_status = "🟢 Ready (Embedded & CLI)" if DiecAdapter().is_available() else "⚪ Not Installed"
+    ghidra_status = "🟢 Ready (Headless SRE)" if GhidraAdapter().is_available() else "⚪ Optional (Requires OpenJDK)"
     gitleaks_status = "🟢 Ready (Embedded & CLI)"
 
     # 6. Database status
@@ -86,6 +88,7 @@ async def status_handler(
         f"• *ExifTool (Metadata/Polyglots):* {exif_status}\n"
         f"• *capa / PE (Executables):* {capa_status}\n"
         f"• *Detect It Easy (Packers):* {diec_status}\n"
+        f"• *Ghidra (Decompiler & SRE):* {ghidra_status}\n"
         f"• *Gitleaks (Secrets & Keys):* {gitleaks_status}\n"
         f"{t('status_db', lang=lang, db_status=db_status)}\n\n"
         f"🛡️ *Host Environment:* Isolated Container Sandbox\n"

@@ -189,6 +189,7 @@ class ReportService:
         vt_result: Optional[VTResult] = None,
         ai_enabled: bool = False,
         vt_enabled: bool = False,
+        is_executable: bool = False,
         lang: str = "en",
     ) -> InlineKeyboardMarkup:
         """Constructs interactive Telegram inline buttons."""
@@ -200,6 +201,14 @@ class ReportService:
                 InlineKeyboardButton(
                     text=t("btn_ai_explain", lang=lang),
                     callback_data=f"ai_exp:{scan_id}",
+                )
+            )
+
+        if is_executable:
+            row.append(
+                InlineKeyboardButton(
+                    text="🔬 Ghidra Decompile",
+                    callback_data=f"ghidra:{scan_id}",
                 )
             )
 

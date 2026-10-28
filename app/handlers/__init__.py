@@ -7,6 +7,7 @@ from app.handlers.privacy import privacy_handler
 from app.handlers.scan import scan_command_handler, document_upload_handler
 from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
 from app.handlers.explain import explain_handler
+from app.handlers.ghidra import ghidra_handler
 from app.handlers.report import report_handler, download_report_callback
 from app.handlers.callbacks import callback_router
 
@@ -23,6 +24,7 @@ __all__ = [
     "ask_text_message_handler",
     "cancel_handler",
     "explain_handler",
+    "ghidra_handler",
     "report_handler",
     "download_report_callback",
     "callback_router",

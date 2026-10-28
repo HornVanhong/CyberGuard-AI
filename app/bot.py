@@ -29,6 +29,7 @@ from app.handlers.start import start_handler
 from app.handlers.status import status_handler
 from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
 from app.handlers.explain import explain_handler
+from app.handlers.ghidra import ghidra_handler
 from app.handlers.report import report_handler
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
@@ -110,6 +111,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("privacy", privacy_handler))
     app.add_handler(CommandHandler("ask", partial(ask_handler, ai=ai, repo=repo)))
     app.add_handler(CommandHandler("explain", partial(explain_handler, ai=ai, repo=repo)))
+    app.add_handler(CommandHandler("ghidra", partial(ghidra_handler, repo=repo)))
     app.add_handler(CommandHandler("report", partial(report_handler, repo=repo)))
     app.add_handler(CommandHandler("cancel", cancel_handler))
 

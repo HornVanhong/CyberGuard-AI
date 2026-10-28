@@ -17,6 +17,7 @@ from app.scanners.oletools_analyzer import OletoolsAdapter
 from app.scanners.pdfid_analyzer import PDFiDAdapter
 from app.scanners.exiftool_analyzer import ExifToolAdapter
 from app.scanners.executable_analyzer import CapaAdapter, DiecAdapter
+from app.scanners.ghidra_analyzer import GhidraAdapter
 from app.scanners.gitleaks_analyzer import GitleaksAdapter
 from app.scanners.orchestrator import ScannerOrchestrator, OrchestrationResult
 
@@ -53,6 +54,7 @@ __all__ = [
     "ExifToolAdapter",
     "CapaAdapter",
     "DiecAdapter",
+    "GhidraAdapter",
     "GitleaksAdapter",
     "ScannerOrchestrator",
     "OrchestrationResult",

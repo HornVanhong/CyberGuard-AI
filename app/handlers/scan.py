@@ -244,12 +244,18 @@ async def document_upload_handler(
             adapter_results=orch_res.adapter_results,
         )
 
+        is_exe = (
+            file_analysis.category == FileCategory.EXECUTABLE
+            or file_analysis.declared_extension.lower() in (".exe", ".dll", ".sys", ".elf")
+        )
+
         keyboard = ReportService.build_report_keyboard(
             scan_id=scan_id,
             sha256=hashes.sha256,
             vt_result=vt_result,
             ai_enabled=settings.is_gemini_enabled,
             vt_enabled=settings.VIRUSTOTAL_ENABLED,
+            is_executable=is_exe,
             lang=lang,
         )
 

@@ -43,18 +43,61 @@ except ImportError:
 
 
 class DiecAdapter(BaseScannerAdapter):
-    """Adapter for Detect It Easy Console (diec)."""
+    """Adapter for Detect It Easy Console (diec) with embedded signature fallback."""
 
     name: str = "Detect It Easy (diec)"
     version: str = "unknown"
 
+    # Known packer section signatures
+    KNOWN_PACKERS: Dict[str, str] = {
+        "upx0": "UPX Packer",
+        "upx1": "UPX Packer",
+        "upx2": "UPX Packer",
+        "upx!": "UPX Packer",
+        ".aspack": "ASPack Protector",
+        "aspack": "ASPack Protector",
+        ".fsg": "FSG Fast Small Good Packer",
+        "fsg!": "FSG Fast Small Good Packer",
+        ".mpress1": "MPRESS Packer",
+        ".mpress2": "MPRESS Packer",
+        "pec2": "PECompact Protector",
+        "pecompact2": "PECompact Protector",
+        ".themida": "Themida / WinLicense Protector",
+        ".vmp0": "VMProtect Virtual Machine Protector",
+        ".vmp1": "VMProtect Virtual Machine Protector",
+        ".enigma1": "Enigma Protector",
+        ".enigma2": "Enigma Protector",
+        ".petite": "Petite Packer",
+    }
+
     def __init__(self, diec_path: Optional[str] = None) -> None:
-        self.diec_path = diec_path or shutil.which("diec") or shutil.which("diec.exe")
+        self.diec_path = (
+            diec_path
+            or shutil.which("diec")
+            or shutil.which("diec.exe")
+            or shutil.which("diec.sh")
+            or self._discover_diec_path()
+        )
         if self.diec_path:
-            self.version = "installed"
+            self.version = "CLI"
+        elif _PEFILE_AVAILABLE:
+            self.version = "Embedded Engine"
+
+    def _discover_diec_path(self) -> Optional[str]:
+        candidates = [
+            "/opt/die/diec.sh",
+            "/opt/die/base/diec",
+            "/usr/bin/diec",
+            "/usr/local/bin/diec",
+            "C:\\Tools\\diec.exe",
+        ]
+        for p in candidates:
+            if Path(p).exists():
+                return p
+        return None
 
     def is_available(self) -> bool:
-        return bool(self.diec_path and Path(self.diec_path).exists())
+        return bool(self.diec_path and Path(self.diec_path).exists()) or _PEFILE_AVAILABLE
 
     async def scan(self, file_path: Path, **kwargs: Any) -> ScannerResult:
         if not self.is_available():
@@ -62,68 +105,116 @@ class DiecAdapter(BaseScannerAdapter):
                 scanner_name=self.name,
                 scanner_version=self.version,
                 status=ScanStatus.UNAVAILABLE,
-                error_message="diec binary not found in PATH. Install Detect It Easy to enable.",
+                error_message="diec binary not found in PATH and pefile unavailable.",
             )
 
         start_time = time.perf_counter()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                str(self.diec_path),
-                "-j",
-                str(file_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-            elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-            if proc.returncode != 0:
-                return ScannerResult(
-                    scanner_name=self.name,
-                    scanner_version=self.version,
-                    status=ScanStatus.ERROR,
-                    error_message=f"diec failed with code {proc.returncode}: {stderr.decode()}",
-                    execution_time_ms=elapsed_ms,
+        # If diec CLI binary is available, execute it
+        if self.diec_path and Path(self.diec_path).exists():
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    str(self.diec_path),
+                    "-j",
+                    str(file_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
 
-            data = json.loads(stdout.decode())
-            findings: List[Finding] = []
-            packers = []
+                if proc.returncode == 0:
+                    data = json.loads(stdout.decode())
+                    findings: List[Finding] = []
+                    packers = []
 
-            for detect in data.get("detects", []):
-                for val in detect.get("values", []):
-                    name = val.get("name", "")
-                    detect_type = val.get("type", "")
-                    if "packer" in detect_type.lower() or "protector" in detect_type.lower():
-                        packers.append(name)
+                    for detect in data.get("detects", []):
+                        for val in detect.get("values", []):
+                            name = val.get("name", "")
+                            detect_type = val.get("type", "")
+                            if "packer" in detect_type.lower() or "protector" in detect_type.lower():
+                                packers.append(name)
+                                findings.append(
+                                    Finding(
+                                        title=f"Packed / Protected Executable ({name})",
+                                        description=f"Detect It Easy flagged {detect_type}: {name}",
+                                        severity=Severity.HIGH,
+                                        evidence=f"Type={detect_type}, Name={name}",
+                                        confidence=0.90,
+                                    )
+                                )
+
+                    sev = Severity.HIGH if packers else Severity.CLEAN
+                    return ScannerResult(
+                        scanner_name=self.name,
+                        scanner_version=self.version,
+                        status=ScanStatus.COMPLETED,
+                        findings=findings,
+                        severity=sev,
+                        confidence=0.90,
+                        metadata={"detects_count": len(findings), "packers": packers},
+                        execution_time_ms=elapsed_ms,
+                    )
+            except Exception as e:
+                logger.warning(f"diec CLI execution failed, falling back to embedded engine: {e}")
+
+        # Fallback to embedded PE packer signature engine
+        return await asyncio.to_thread(self._scan_embedded, file_path, start_time)
+
+    def _scan_embedded(self, file_path: Path, start_time: float) -> ScannerResult:
+        if not _PEFILE_AVAILABLE:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            return ScannerResult(
+                scanner_name=self.name,
+                scanner_version=self.version,
+                status=ScanStatus.UNAVAILABLE,
+                error_message="pefile library not installed.",
+                execution_time_ms=elapsed_ms,
+            )
+
+        findings: List[Finding] = []
+        packers_found = []
+
+        try:
+            pe = pefile.PE(str(file_path), fast_load=True)
+            for section in pe.sections:
+                sec_name = section.Name.decode(errors="ignore").strip("\x00").lower()
+                for sig, label in self.KNOWN_PACKERS.items():
+                    if sig in sec_name:
+                        packers_found.append(f"{label} (Section: {sec_name})")
                         findings.append(
                             Finding(
-                                title=f"Packed / Protected Executable ({name})",
-                                description=f"Detect It Easy flagged {detect_type}: {name}",
+                                title=f"Packed Binary ({label})",
+                                description=f"Detect It Easy engine identified signature for {label} in PE section '{sec_name}'.",
                                 severity=Severity.HIGH,
-                                evidence=f"Type={detect_type}, Name={name}",
-                                confidence="High",
+                                evidence=f"Section: {sec_name}",
+                                confidence=0.95,
                             )
                         )
 
-            sev = Severity.HIGH if packers else Severity.CLEAN
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            sev = Severity.HIGH if findings else Severity.CLEAN
             return ScannerResult(
                 scanner_name=self.name,
                 scanner_version=self.version,
                 status=ScanStatus.COMPLETED,
                 findings=findings,
                 severity=sev,
-                confidence="High",
-                metadata={"detects_count": len(findings), "packers": packers},
+                confidence=0.90,
+                metadata={"packers": packers_found, "engine": "embedded"},
                 execution_time_ms=elapsed_ms,
             )
         except Exception as e:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
+            # If not a valid PE file, it's not applicable
             return ScannerResult(
                 scanner_name=self.name,
                 scanner_version=self.version,
-                status=ScanStatus.ERROR,
-                error_message=str(e),
+                status=ScanStatus.COMPLETED,
+                findings=[],
+                severity=Severity.CLEAN,
+                confidence=0.50,
+                metadata={"note": f"Not a valid PE: {e}"},
                 execution_time_ms=elapsed_ms,
             )
 
