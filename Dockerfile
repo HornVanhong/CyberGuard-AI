@@ -31,9 +31,10 @@ COPY --chown=cyberguard:cyberguard rules/ /app/rules/
 COPY --chown=cyberguard:cyberguard data/ /app/data/
 COPY --chown=cyberguard:cyberguard temp_uploads/ /app/temp_uploads/
 
-# Ensure safe permissions
-RUN chmod -R 750 /app && \
-    chmod 770 /app/data /app/temp_uploads
+# Ensure safe permissions and ownership
+RUN chown -R cyberguard:cyberguard /app && \
+    chmod -R 755 /app && \
+    chmod 775 /app/data /app/temp_uploads
 
 # Run as non-root user
 USER cyberguard:cyberguard

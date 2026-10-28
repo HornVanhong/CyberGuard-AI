@@ -46,7 +46,7 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=100m
-      - /app/temp_uploads:rw,noexec,nosuid,size=200m
+      - /app/temp_uploads:rw,noexec,nosuid,size=200m,uid=10001,gid=10001,mode=0775
     volumes:
       - cyberguard_data:/app/data
     networks:
