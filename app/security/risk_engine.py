@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from app.scanners.clamav_scanner import ClamAVResult, ClamAVStatus
 from app.scanners.yara_scanner import YaraResult, YaraStatus
@@ -19,7 +19,9 @@ from app.scanners.script_analyzer import ScriptFinding, ScriptSeverity
 from app.scanners.pdf_analyzer import PDFFinding, PDFSeverity
 from app.scanners.archive_analyzer import ArchiveFinding, ArchiveSeverity
 from app.scanners.office_analyzer import OfficeFinding, OfficeSeverity
-from app.services.virustotal_service import VTResult, VTStatus
+
+if TYPE_CHECKING:
+    from app.services.virustotal_service import VTResult
 
 
 class Verdict(str, Enum):
@@ -187,7 +189,7 @@ class RiskEngine:
                     findings.append(f"Office Document Analysis ({of.category}): {of.description}")
 
         # 8. VirusTotal External Threat Intelligence
-        if vt_result and vt_result.status == VTStatus.FOUND:
+        if vt_result and getattr(vt_result.status, "value", str(vt_result.status)) == "FOUND":
             engines_checked.append("VirusTotal")
             if vt_result.positives > 0:
                 findings.append(

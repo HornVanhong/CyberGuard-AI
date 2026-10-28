@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import httpx
 
-from app.security.risk_engine import AssessmentResult
+if TYPE_CHECKING:
+    from app.security.risk_engine import AssessmentResult
 from app.utils.logger import logger
 
 
