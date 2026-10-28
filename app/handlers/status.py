@@ -54,7 +54,7 @@ async def status_handler(
 
     # 4. AI Service status (Google Gemini via official google-genai SDK)
     if ai.enabled and ai.is_configured:
-        ai_status = f"🟢 Ready (SDK: google-genai | Model: {ai.model})"
+        ai_status = "🟢 Ready (google-genai)"
     elif ai.is_configured:
         ai_status = "⚪ Disabled in configuration (GEMINI_ENABLED=false)"
     else:
