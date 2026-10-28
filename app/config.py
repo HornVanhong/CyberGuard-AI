@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List
-from pydantic import Field
+from typing import Any, List
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,10 +24,37 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str = Field(default="", description="Telegram Bot API Token")
-    ALLOWED_USER_IDS: List[int] = Field(
+    ALLOWED_USER_IDS: Any = Field(
         default_factory=list,
         description="List of allowed Telegram User IDs. Empty means open to all.",
     )
+
+    @field_validator("ALLOWED_USER_IDS", mode="before")
+    @classmethod
+    def parse_allowed_user_ids(cls, v: Any) -> List[int]:
+        """Safely parses empty string, comma-separated IDs, or JSON arrays."""
+        if not v or v == "":
+            return []
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return [int(x) for x in json.loads(v)]
+                except Exception:
+                    pass
+            # Comma-separated format
+            items = []
+            for part in v.split(","):
+                part = part.strip()
+                if part.isdigit():
+                    items.append(int(part))
+            return items
+        if isinstance(v, (list, tuple)):
+            return [int(x) for x in v]
+        return []
 
     # File and Upload Limits
     MAX_FILE_SIZE_BYTES: int = Field(
