@@ -94,8 +94,19 @@ async def _process_ask_question(
     repo: ScanRepository,
     lang: str,
 ) -> None:
-    """Helper to query Gemini and deliver cybersecurity response."""
-    thinking_msg = await message.reply_text(t("ask_thinking", lang=lang))
+    """Helper to query Gemini and deliver cybersecurity response with instant feedback."""
+    thinking_text = (
+        "🤔 *CyberGuard AI កំពុងវិភាគ និងរៀបចំចម្លើយជូនអ្នក...*"
+        if lang == "km"
+        else "🤔 *CyberGuard AI is analyzing and formulating security advice...*"
+    )
+    thinking_msg = await message.reply_text(thinking_text, parse_mode=ParseMode.MARKDOWN)
+
+    # Trigger chat typing indicator immediately so Telegram header shows animated "typing..."
+    try:
+        await message.get_bot().send_chat_action(chat_id=message.chat_id, action="typing")
+    except Exception:
+        pass
 
     latest_scan = repo.get_latest_user_scan(user_id=user_id)
     answer = await ai.answer_security_question(
@@ -104,14 +115,17 @@ async def _process_ask_question(
         lang=lang,
     )
 
+    header = "🤖 *ជំនួយការសន្តិសុខ CyberGuard AI*" if lang == "km" else "🤖 *CyberGuard AI Security Advice*"
+    final_text = f"{header}\n\n{answer}"
+
     try:
         await thinking_msg.edit_text(
-            f"🤖 *CyberGuard AI Security Advice*\n\n{answer}",
+            final_text,
             parse_mode=ParseMode.MARKDOWN,
         )
     except Exception:
         # Fallback if markdown parsing fails
-        await thinking_msg.edit_text(f"🤖 CyberGuard AI Security Advice\n\n{answer}")
+        await thinking_msg.edit_text(final_text)
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

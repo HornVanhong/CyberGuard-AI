@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -31,6 +32,31 @@ except ImportError:
     types = None  # type: ignore
     APIError = Exception  # type: ignore
     _GENAI_INSTALLED = False
+
+
+def clean_ai_telegram_output(text: str) -> str:
+    """Cleans AI output for Telegram: eliminates Thai/Lao slip-ups and raw markdown headers/dividers."""
+    if not text:
+        return ""
+    # 1. Replace common Lao/Thai mis-generations with proper Khmer equivalents
+    text = text.replace("ມັກ", "តែងតែ").replace("มัก", "តែងតែ")
+    text = text.replace("ไฟล์", "ឯកសារ").replace("ไวรัส", "មេរោគ")
+
+    # 2. Strip any remaining Thai/Lao Unicode script (U+0E00 - U+0EFF)
+    text = re.sub(r"[\u0E00-\u0EFF]+", "", text)
+
+    # 3. Convert markdown headers (### Header) to clean bold (*Header*)
+    text = re.sub(r"^#{1,6}\s*(.+)$", r"*\1*", text, flags=re.MULTILINE)
+
+    # 4. Remove markdown horizontal lines (---, ***, ___)
+    text = re.sub(r"^\s*[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+
+    # 5. Fix double asterisks inside quotes or excessive asterisks
+    text = re.sub(r"\*{3,}", "**", text)
+
+    # 6. Normalize spacing
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 class IndicatorItem(BaseModel):
@@ -148,6 +174,14 @@ class AIService:
         safe_engines_checked = [e[:30] for e in getattr(assessment, "engines_checked", [])]
         safe_engines_unavail = [e[:30] for e in getattr(assessment, "engines_unavailable", [])]
 
+        khmer_lang_rule = (
+            " When responding in Khmer (lang='km'), you MUST use 100% pure standard Khmer (ភាសាខ្មែរ). "
+            "Under NO circumstances should you use any Thai or Lao words, characters, or grammar (Zero Thai/Lao allowed). "
+            "Do NOT use words like 'มัก' or 'ມັກ'."
+            if lang == "km"
+            else ""
+        )
+
         system_instruction = (
             "You are CyberGuard AI's senior cybersecurity analyst assistant. "
             "Your role is to explain technical scan findings clearly and objectively to computer users. "
@@ -158,7 +192,7 @@ class AIService:
             "you must clearly highlight the danger. If NO_KNOWN_THREAT_DETECTED, note that zero detection does not guarantee 100% safety.\n"
             "3. Do NOT invent findings, threat intelligence, or scan properties not present in the input.\n"
             "4. Fill out all required schema fields accurately.\n"
-            f"5. Provide explanations and text in {'Khmer (ភាសាខ្មែរ)' if lang == 'km' else 'English'}."
+            f"5. Provide explanations and text in {'Khmer (ភាសាខ្មែរ)' if lang == 'km' else 'English'}.{khmer_lang_rule}"
         )
 
         user_prompt = f"""
@@ -199,7 +233,10 @@ Observed Findings:
             validated = SecurityExplanationSchema.model_validate(parsed_data)
 
             indicators_list = [
-                {"indicator": item.indicator, "explanation": item.explanation}
+                {
+                    "indicator": clean_ai_telegram_output(item.indicator),
+                    "explanation": clean_ai_telegram_output(item.explanation),
+                }
                 for item in validated.explanation_of_indicators
             ]
 
@@ -210,15 +247,18 @@ Observed Findings:
 
             return AIExplanationResult(
                 success=True,
-                summary=validated.summary,
-                detected_indicators=validated.detected_indicators,
+                summary=clean_ai_telegram_output(validated.summary),
+                detected_indicators=[clean_ai_telegram_output(x) for x in validated.detected_indicators],
                 explanation_of_indicators=indicators_list,
                 severity=validated.severity,
                 confidence_level=validated.confidence_level,
-                potential_impact=validated.potential_impact,
-                recommended_defensive_actions=validated.recommended_defensive_actions or assessment.recommendations,
-                important_uncertainties=validated.important_uncertainties,
-                statement_of_scope=validated.statement_of_scope,
+                potential_impact=clean_ai_telegram_output(validated.potential_impact),
+                recommended_defensive_actions=[
+                    clean_ai_telegram_output(a)
+                    for a in (validated.recommended_defensive_actions or assessment.recommendations)
+                ],
+                important_uncertainties=clean_ai_telegram_output(validated.important_uncertainties),
+                statement_of_scope=clean_ai_telegram_output(validated.statement_of_scope),
                 disclaimer=disclaimer,
             )
 
@@ -273,46 +313,73 @@ Observed Findings:
         # Bound question input size (anti-DoS / token limit)
         clean_question = question[:600].strip()
         if not clean_question:
+            if lang == "km":
+                return "សូមបញ្ចូលសំណួរដែលអ្នកចង់សួរមកកាន់ CyberGuard AI។"
             return "Please provide a question to ask CyberGuard AI."
 
-        # Prepare scan context if available
-        scan_context_str = "No recent scan records available for this user."
-        if latest_scan:
+        # Detect if question specifically mentions or asks about a file/scan
+        q_lower = clean_question.lower()
+        file_keywords = [
+            "my file", "this file", "the file", "my scan", "uploaded", "safe to open",
+            "ឯកសារ", "ស្កេន", "មេរោគ", "សុវត្ថិភាព", "បើក", "លទ្ធផល", "របស់ខ្ញុំ", "ដែលខ្ញុំផ្ញើ", "ឯកសារខ្ញុំ"
+        ]
+        is_file_query = any(k in q_lower for k in file_keywords)
+
+        # Prepare scan context ONLY if the user specifically asked or referred to their file
+        scan_context_str = ""
+        if latest_scan and is_file_query:
             scan_context_str = (
-                f"User's Most Recent Scan Record:\n"
-                f"- File: {latest_scan.filename_sanitized}\n"
-                f"- Size: {latest_scan.file_size} bytes\n"
-                f"- SHA-256: {latest_scan.sha256}\n"
+                f"\nContext on User's Recently Scanned File:\n"
+                f"- Filename: {latest_scan.filename_sanitized}\n"
+                f"- SHA-256: {latest_scan.sha256[:16]}...\n"
                 f"- Verdict: {latest_scan.verdict}\n"
                 f"- Risk Level: {latest_scan.risk_level}\n"
-                f"- Date: {latest_scan.created_at}\n"
             )
 
-        system_instruction = (
-            "You are CyberGuard AI, an expert cybersecurity assistant integrated into Telegram. "
-            "You assist everyday users with cybersecurity education, file analysis, threat explanation, "
-            "antivirus detections, and endpoint defense.\n\n"
-            "RULES:\n"
-            "1. Answer concisely, beginner-friendly, and formatted in clean Markdown.\n"
-            "2. If the user asks about 'my file' or 'my scan', refer to the provided scan context. "
-            "If no scan context exists, politely inform the user and answer generally.\n"
-            "3. If asked about technical terms (SHA-256, Trojan, ransomware, phishing, macro viruses), "
-            "explain them using clear analogies and practical safety steps.\n"
-            "4. NEVER execute code, run commands, or reveal API keys or server paths.\n"
-            f"5. Answer in {'Khmer (ភាសាខ្មែរ)' if lang == 'km' else 'English'}."
-        )
+        if lang == "km":
+            system_instruction = (
+                "អ្នកជា CyberGuard AI ជំនួយការសន្តិសុខបច្ចេកវិទ្យាផ្លូវការនៅលើ Telegram។\n\n"
+                "គោលការណ៍ភាសាដាច់ខាត (STRICT LANGUAGE RULES):\n"
+                "1. ត្រូវឆ្លើយជាភាសាខ្មែរសុទ្ធសាធ ១០០% (Pure Standard Khmer)។\n"
+                "2. ហាមដាច់ខាតមិនឱ្យប្រើពាក្យថៃ ឡាវ អក្សរថៃ ឬវេយ្យាករណ៍ថៃឡើយ (ABSOLUTELY NO THAI/LAO WORDS OR CHARACTERS)។ ហាមប្រើពាក្យដូចជា 'ມັກ' ឬ 'มัก'។\n"
+                "3. ចំពោះពាក្យបច្ចេកទេស អាចរក្សាពាក្យអង់គ្លេសក្នុងវង់ក្រចកបាន ឧទាហរណ៍៖ កម្មវិធីដំណើរការ (Executable .exe)។\n\n"
+                "ទម្រង់សារ TELEGRAM (TELEGRAM FORMATTING TEMPLATE):\n"
+                "1. ហាមប្រើសញ្ញា #, ##, ### (Headers) និងហាមប្រើសញ្ញា --- (Dividers) ដាច់ខាត។\n"
+                "2. ត្រូវរៀបចំទម្រង់ឆ្លើយឱ្យស្អាត ខ្លី ខ្លឹម រហ័ស (ក្រោម ១២០ ពាក្យ) តាមលំនាំគំរូដូចខាងក្រោម៖\n\n"
+                "💡 *ការពន្យល់សង្ខេប (Summary):*\n"
+                "<ការពន្យល់ខ្លី ងាយយល់ ចំប្រធានបទ ១ ទៅ ២ កថាខណ្ឌខ្លី>\n\n"
+                "🔍 *ចំណុចសំខាន់ៗ (Key Points):*\n"
+                "• *ចំណុចទី១:* ការពិពណ៌នាខ្លី\n"
+                "• *ចំណុចទី២:* ការពិពណ៌នាខ្លី\n\n"
+                "🛡️ *ការណែនាំសុវត្ថិភាព (Safety Advice):*\n"
+                "• សកម្មភាពការពារទី១\n"
+                "• សកម្មភាពការពារទី២\n\n"
+                "3. ប្រសិនបើសំណួរជាសំណួរទូទៅ (ឧ. 'តើ .exe ជាអ្វី?') ហាមលើកយកប្រវត្តិស្កេនឯកសារចាស់មកនិយាយដាច់ខាត។"
+            )
+        else:
+            system_instruction = (
+                "You are CyberGuard AI, an expert cybersecurity assistant on Telegram.\n\n"
+                "TELEGRAM FORMATTING & TEMPLATE RULES:\n"
+                "1. Answer concisely, directly, and fast (under 120 words).\n"
+                "2. DO NOT use markdown headers (#, ##, ###) or horizontal dividers (---).\n"
+                "3. Use this clean Telegram template:\n\n"
+                "💡 *Summary:*\n"
+                "<Concise, beginner-friendly explanation in 1-2 short paragraphs>\n\n"
+                "🔍 *Key Points:*\n"
+                "• *Point 1:* Brief description\n"
+                "• *Point 2:* Brief description\n\n"
+                "🛡️ *Safety Advice:*\n"
+                "• Defensive tip 1\n"
+                "• Defensive tip 2\n\n"
+                "4. If the question is general (e.g. 'what is .exe?'), answer directly without bringing up old scan context."
+            )
 
-        user_prompt = f"""
-{scan_context_str}
-
-User Question:
-{clean_question}
-"""
+        user_prompt = f"{scan_context_str}\nUser Question: {clean_question}".strip()
 
         try:
             config = types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=self.max_output_tokens,
+                temperature=0.2,
+                max_output_tokens=min(self.max_output_tokens, 450),
                 system_instruction=system_instruction,
             )
 
@@ -325,14 +392,23 @@ User Question:
                 timeout=self.timeout,
             )
 
-            answer = response.text or "I could not generate an answer at this time."
-            return answer.strip()
+            raw_answer = response.text or ""
+            if not raw_answer:
+                return "មិនអាចបង្កើតចម្លើយបានទេនៅពេលនេះ។" if lang == "km" else "I could not generate an answer at this time."
+
+            return clean_ai_telegram_output(raw_answer)
 
         except asyncio.TimeoutError:
+            if lang == "km":
+                return "⏳ ការស្នើសុំបានហួសពេលកំណត់ (Timeout)។ សូមព្យាយាមម្តងទៀត។"
             return "⏳ Request timed out while waiting for Gemini AI. Please try again."
         except Exception as e:
             error_str = str(e)
             logger.error("Gemini Q&A error: %s", error_str)
             if "429" in error_str or "quota" in error_str.lower():
+                if lang == "km":
+                    return "⚠️ ចំនួនស្នើសុំលើសកំណត់ (Quota Limit)។ សូមព្យាយាមម្តងទៀតនៅពេលក្រោយ។"
                 return "⚠️ Gemini API rate limit or quota exceeded. Please try again later."
+            if lang == "km":
+                return "⚠️ មិនអាចដំណើរការសំណួររបស់អ្នកបានទេនៅពេលនេះ។"
             return "⚠️ Unable to process your cybersecurity question at this time."
