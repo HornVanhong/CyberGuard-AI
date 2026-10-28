@@ -2,7 +2,7 @@
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Tests: 95 Passed](https://img.shields.io/badge/Tests-95%20Passed-brightgreen.svg)]()
+[![Tests: 98 Passed](https://img.shields.io/badge/Tests-98%20Passed-brightgreen.svg)]()
 [![Security: Isolated Container](https://img.shields.io/badge/Security-Non--Root%20%7C%20Read--Only-red.svg)]()
 
 **CyberGuard AI** is a production-grade, secure, multi-engine Telegram bot designed to inspect uploaded files for malware, viruses, suspicious payloads, malicious scripts, phishing indicators, and dangerous macros **without ever executing untrusted files on the host system**.
@@ -18,7 +18,8 @@
 - **oletools (`olevba`)**: Advanced macro analysis for Microsoft Office documents (`.doc`, `.docx`, `.docm`, `.xls`, `.xlsm`). Extracts VBA macros, identifies auto-execution triggers (`AutoOpen`, `Document_Open`), obfuscation techniques, and dangerous system API calls (`Shell`, `WScript.Shell`).
 - **PDFiD Structural Analysis**: Inspects PDF structure for suspicious indicators, including `/JavaScript`, `/Launch`, `/OpenAction`, `/AA`, `/EmbeddedFiles`, and hex-encoded name obfuscation.
 - **ExifTool Metadata & Polyglot Inspection**: Extracts detailed file metadata and identifies polyglot attacks where executable or PHP scripts are concealed inside image EXIF fields.
-- **capa & Detect It Easy (DIE)**: Inspects PE executables for section entropy, known packers (e.g. UPX), and high-risk Windows API imports (`CreateRemoteThread`, `VirtualAllocEx`) without execution.
+- **capa & Detect It Easy (DIE)**: Inspects PE executables for section entropy, known packers (e.g. UPX, ASPack, Themida, VMProtect), and high-risk Windows API imports (`CreateRemoteThread`, `VirtualAllocEx`) with both native CLI discovery and high-speed embedded signature fallback.
+- **Ghidra Headless Decompiler & SRE (NSA)**: Passive software reverse engineering extracting function count, compiler information, cross-references to dangerous APIs (injection, execution, network, cryptography), and decompiled pseudo-C code via the `/ghidra [scan_id]` command or interactive `🔬 Ghidra Decompile` button.
 - **Gitleaks Secret Scanner**: Scans source code and scripts for exposed API tokens, cloud keys (AWS, GitHub, Slack), and private keys, with mandatory credential redaction (`AKIA****`) in all reports.
 - **Safe Static Script Analysis**: Inspects scripts (`.py`, `.js`, `.php`, `.ps1`, `.bat`, `.sh`, `.vbs`) for obfuscated Base64, reverse shells, download-and-execute triggers, credential dumping (`mimikatz`), and persistence hooks.
 - **Decompression Bomb & Safe Archive Inspection**: Inspects ZIP, TAR, and GZ archives strictly in memory. Enforces 100:1 ratio limits (Zip Bomb defense), max entry limits, max uncompressed byte limits, double-extension trick detection (`document.pdf.exe`), and strict path traversal protection (`../`, absolute paths, symlinks).
@@ -181,6 +182,7 @@ cp .env.example .env
    scan - Prompt to upload a file for analysis
    ask - Ask cybersecurity questions (with latest scan context)
    explain - Get AI deep-dive explanation for a scan ID
+   ghidra - Decompile executable and inspect API xrefs (Ghidra SRE)
    report - Download plain-text audit report for a scan ID
    cancel - Cancel active question or session
    status - Check scanning engine health, Gemini & signatures
@@ -299,16 +301,16 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: anyio-4.15.1, asyncio-1.4.1
 asyncio: mode=Mode.AUTO, debug=False
-collected 95 items
+collected 98 items
 
-tests\test_adapters.py ...............                                   [ 15%]
-tests\test_ai_service.py ..........                                      [ 26%]
-tests\test_archive_analyzer.py .....                                     [ 31%]
-tests\test_bot_handlers.py ........                                      [ 40%]
-tests\test_clamav_scanner.py .......                                     [ 47%]
-tests\test_database.py ...                                               [ 50%]
-tests\test_file_analyzer.py .....                                        [ 55%]
-tests\test_hashing.py ...                                                [ 58%]
+tests\test_adapters.py ..................                                [ 18%]
+tests\test_ai_service.py ..........                                      [ 28%]
+tests\test_archive_analyzer.py .....                                     [ 33%]
+tests\test_bot_handlers.py ........                                      [ 41%]
+tests\test_clamav_scanner.py .......                                     [ 48%]
+tests\test_database.py ...                                               [ 51%]
+tests\test_file_analyzer.py .....                                        [ 56%]
+tests\test_hashing.py ...                                                [ 59%]
 tests\test_office_analyzer.py ...                                        [ 62%]
 tests\test_pdf_analyzer.py ...                                           [ 65%]
 tests\test_rate_limiter.py ...                                           [ 68%]
@@ -319,7 +321,7 @@ tests\test_validation_and_cleanup.py .......                             [ 90%]
 tests\test_virustotal_service.py .....                                   [ 95%]
 tests\test_yara_scanner.py ....                                          [100%]
 
-============================= 95 passed in 20.57s =============================
+============================= 98 passed in 39.45s =============================
 ```
 
 ---
@@ -339,7 +341,8 @@ To optimize performance and eliminate noise, the **`ScannerOrchestrator` selecti
 | **oletools (`olevba`)** | Office Documents | `.doc`, `.docx`, `.docm`, `.xls`, `.xlsx`, `.xlsm`, `.ppt` | VBA macro extraction, autoexec hooks, suspicious APIs | BSD-2-Clause |
 | **PDFiD** | PDF Structures | `.pdf` | Suspicious structural tags (`/JavaScript`, `/Launch`, `/OpenAction`, `/AA`), hex-encoded names | Public Domain |
 | **Gitleaks** | Secrets & Credentials | Scripts, Source Code, Configs (`.py`, `.js`, `.env`, `.sh`, etc.) | Hardcoded API keys, tokens (AWS, GitHub, Slack), private keys (masked in reports) | MIT |
-| **capa & DIE** | Executables | Windows PE (`.exe`, `.dll`, `.sys`) | Capabilities, section entropy, packers (UPX), high-risk APIs (`VirtualAllocEx`) | Apache-2.0 / MIT |
+| **capa & DIE** | Executables | Windows PE (`.exe`, `.dll`, `.sys`) | Capabilities, section entropy, packers (UPX, ASPack), high-risk APIs (`VirtualAllocEx`) | Apache-2.0 / MIT |
+| **Ghidra** | Decompiler & SRE | Executables (`.exe`, `.dll`, `.elf`) | Deep disassembly, function symbol counts, dangerous Win32 API xrefs, pseudo-C decompilation | Apache-2.0 |
 
 ### Standardized Result Format (`ScannerResult`)
 ```python
