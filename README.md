@@ -2,7 +2,7 @@
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Tests: 80 Passed](https://img.shields.io/badge/Tests-80%20Passed-brightgreen.svg)]()
+[![Tests: 95 Passed](https://img.shields.io/badge/Tests-95%20Passed-brightgreen.svg)]()
 [![Security: Isolated Container](https://img.shields.io/badge/Security-Non--Root%20%7C%20Read--Only-red.svg)]()
 
 **CyberGuard AI** is a production-grade, secure, multi-engine Telegram bot designed to inspect uploaded files for malware, viruses, suspicious payloads, malicious scripts, phishing indicators, and dangerous macros **without ever executing untrusted files on the host system**.
@@ -11,14 +11,17 @@
 
 ## 🌟 Key Features
 
-### 1. Multi-Engine Security Pipeline
+### 1. Multi-Engine Security Pipeline & Modular Adapters
 - **ClamAV Antivirus Daemon (TCP/zINSTREAM)**: High-speed streaming antivirus inspection without host disk sharing. Correctly distinguishes `MALWARE_DETECTED`, `CLEAN`, `UNAVAILABLE`, `FAILED`, and `INCONCLUSIVE` (network or service errors are never masked as clean).
 - **YARA Signature Matching**: Modular rule sets for identifying webshells, obfuscated PowerShell, ransomware indicators, and weaponized documents.
-- **Magic Byte & Extension Mismatch Detection**: Validates true file signatures (`MZ`, `PK`, `%PDF`, `ELF`, etc.) against declared extensions to detect disguised threats (e.g. an executable disguised as `.pdf` or an archive disguised as `.jpg`).
-- **Safe Static Script Analysis**: Inspects scripts (`.py`, `.js`, `.php`, `.ps1`, `.bat`, `.sh`, `.vbs`) for obfuscated Base64, reverse shells, download-and-execute triggers, credential dumping (`mimikatz`), persistence hooks, and hardcoded API tokens without executing them.
-- **Static PDF Structure Analysis**: Identifies embedded JavaScript (`/JavaScript`, `/JS`), launch actions (`/Launch`), automatic triggers (`/OpenAction`, `/AA`), embedded file attachments, and hexadecimal name obfuscation.
+- **File Identification & Hashing (`python-magic` & SHA-256)**: Validates true file signatures (`MZ`, `PK`, `%PDF`, `ELF`, etc.) against declared extensions using `python-magic` (with puremagic fallback) to detect disguised threats and computes streaming SHA-256 cryptographic hashes.
+- **oletools (`olevba`)**: Advanced macro analysis for Microsoft Office documents (`.doc`, `.docx`, `.docm`, `.xls`, `.xlsm`). Extracts VBA macros, identifies auto-execution triggers (`AutoOpen`, `Document_Open`), obfuscation techniques, and dangerous system API calls (`Shell`, `WScript.Shell`).
+- **PDFiD Structural Analysis**: Inspects PDF structure for suspicious indicators, including `/JavaScript`, `/Launch`, `/OpenAction`, `/AA`, `/EmbeddedFiles`, and hex-encoded name obfuscation.
+- **ExifTool Metadata & Polyglot Inspection**: Extracts detailed file metadata and identifies polyglot attacks where executable or PHP scripts are concealed inside image EXIF fields.
+- **capa & Detect It Easy (DIE)**: Inspects PE executables for section entropy, known packers (e.g. UPX), and high-risk Windows API imports (`CreateRemoteThread`, `VirtualAllocEx`) without execution.
+- **Gitleaks Secret Scanner**: Scans source code and scripts for exposed API tokens, cloud keys (AWS, GitHub, Slack), and private keys, with mandatory credential redaction (`AKIA****`) in all reports.
+- **Safe Static Script Analysis**: Inspects scripts (`.py`, `.js`, `.php`, `.ps1`, `.bat`, `.sh`, `.vbs`) for obfuscated Base64, reverse shells, download-and-execute triggers, credential dumping (`mimikatz`), and persistence hooks.
 - **Decompression Bomb & Safe Archive Inspection**: Inspects ZIP, TAR, and GZ archives strictly in memory. Enforces 100:1 ratio limits (Zip Bomb defense), max entry limits, max uncompressed byte limits, double-extension trick detection (`document.pdf.exe`), and strict path traversal protection (`../`, absolute paths, symlinks).
-- **Microsoft Office Analysis**: Inspects modern OpenXML packages (`.docx`, `.xlsx`, `.pptx`, `.docm`, `.xlsm`) and legacy OLE files. Detects hidden VBA macros in declared macro-free files, auto-exec hooks (`AutoOpen`, `Workbook_Open`), embedded OLE objects, and suspicious system API invocations (`Shell`, `WScript.Shell`).
 - **VirusTotal Threat Intelligence (Optional)**: Performs zero-disclosure cryptographic SHA-256 hash queries. Respects rate limits, includes local TTL caching, and **never uploads raw files without explicit user consent**.
 - **AI-Powered Explanations & Assistant (Google Gemini via official `google-genai` SDK)**:
   - Generates schema-validated structured security analysis (`SecurityExplanationSchema`: indicators, severity, confidence, defensive actions, uncertainties, and scope).
@@ -60,9 +63,16 @@ cyberguard-ai/
 │   │   └── callbacks.py          # Inline button callback router
 │   ├── scanners/
 │   │   ├── __init__.py
+│   │   ├── base.py               # Standardized BaseScannerAdapter & ScannerResult
+│   │   ├── orchestrator.py       # Selective scanner orchestrator by file type
 │   │   ├── clamav_scanner.py     # Asynchronous ClamAV TCP client
 │   │   ├── yara_scanner.py       # Modular YARA signature compiler & runner
 │   │   ├── file_analyzer.py      # Magic byte validator & extension mismatch
+│   │   ├── oletools_analyzer.py  # oletools (olevba) macro extraction & analysis
+│   │   ├── pdfid_analyzer.py     # PDFiD structural indicator scanner
+│   │   ├── exiftool_analyzer.py  # ExifTool metadata & polyglot detection
+│   │   ├── executable_analyzer.py# capa & Detect It Easy (DIE) PE analyzers
+│   │   ├── gitleaks_analyzer.py  # Gitleaks secret & credential scanner (redacted)
 │   │   ├── script_analyzer.py    # Static script analyzer (PS, Bash, JS, PHP)
 │   │   ├── pdf_analyzer.py       # Static PDF object & stream analyzer
 │   │   ├── archive_analyzer.py   # Zip bomb & traversal archive inspector
@@ -95,6 +105,7 @@ cyberguard-ai/
 │   └── test_fixtures.yar         # Synthetic test fixture rules
 ├── tests/
 │   ├── conftest.py               # Temporary directory & database fixtures
+│   ├── test_adapters.py          # FOSS scanner adapter unit tests
 │   ├── test_hashing.py           # Cryptographic hash tests
 │   ├── test_file_analyzer.py     # Format & mismatch tests
 │   ├── test_clamav_scanner.py    # ClamAV streaming protocol tests
@@ -270,6 +281,14 @@ The automated test suite covers all 17 required scenarios:
 - SQLite database user data isolation and `/cleardata` erasure
 - Sandbox creation and guaranteed post-scan cleanup
 - AI service structured schema validation (`google-genai`), prompt injection defense, quota (429) & timeout resilience, and general/scan-context Q&A in English and Khmer
+- FOSS scanner adapter unit tests (`tests/test_adapters.py`):
+  - `oletools` macro extraction, autoexec flags, and non-OLE plain text resilience
+  - `PDFiD` suspicious structural elements (`/JavaScript`, `/Launch`, `/OpenAction`, hex obfuscation)
+  - `ExifTool` metadata extraction, polyglot webshell detection, and missing binary fallback
+  - `Gitleaks` credential discovery with AWS/GitHub token masking (`AKIA****`, `ghp_****`) and clean code verification
+  - `capa` & `diec` PE executable entropy/packer checks and graceful fallback on non-PE files
+  - `ScannerOrchestrator` selective file-type routing
+  - `RiskEngine` correlation and scoring of adapter findings
 - Telegram handlers for `/start`, `/scan`, `/ask`, `/explain`, `/report`, `/cancel`, `/status`, `/history`, and `/cleardata`
 
 ```text
@@ -280,26 +299,59 @@ configfile: pyproject.toml
 testpaths: tests
 plugins: anyio-4.15.1, asyncio-1.4.1
 asyncio: mode=Mode.AUTO, debug=False
-collected 80 items
+collected 95 items
 
-tests\test_ai_service.py ..........                                      [ 12%]
-tests\test_archive_analyzer.py .....                                     [ 18%]
-tests\test_bot_handlers.py ........                                      [ 28%]
-tests\test_clamav_scanner.py .......                                     [ 37%]
-tests\test_database.py ...                                               [ 41%]
-tests\test_file_analyzer.py .....                                        [ 47%]
-tests\test_hashing.py ...                                                [ 51%]
-tests\test_office_analyzer.py ...                                        [ 55%]
-tests\test_pdf_analyzer.py ...                                           [ 58%]
-tests\test_rate_limiter.py ...                                           [ 62%]
-tests\test_report_service.py ....                                        [ 67%]
-tests\test_risk_engine.py .....                                          [ 73%]
-tests\test_script_analyzer.py .....                                      [ 80%]
-tests\test_validation_and_cleanup.py .......                             [ 88%]
+tests\test_adapters.py ...............                                   [ 15%]
+tests\test_ai_service.py ..........                                      [ 26%]
+tests\test_archive_analyzer.py .....                                     [ 31%]
+tests\test_bot_handlers.py ........                                      [ 40%]
+tests\test_clamav_scanner.py .......                                     [ 47%]
+tests\test_database.py ...                                               [ 50%]
+tests\test_file_analyzer.py .....                                        [ 55%]
+tests\test_hashing.py ...                                                [ 58%]
+tests\test_office_analyzer.py ...                                        [ 62%]
+tests\test_pdf_analyzer.py ...                                           [ 65%]
+tests\test_rate_limiter.py ...                                           [ 68%]
+tests\test_report_service.py ....                                        [ 72%]
+tests\test_risk_engine.py .....                                          [ 77%]
+tests\test_script_analyzer.py .....                                      [ 83%]
+tests\test_validation_and_cleanup.py .......                             [ 90%]
 tests\test_virustotal_service.py .....                                   [ 95%]
 tests\test_yara_scanner.py ....                                          [100%]
 
-============================= 80 passed in 14.76s =============================
+============================= 95 passed in 20.57s =============================
+```
+
+---
+
+## 🛠️ FOSS Cybersecurity Tools & Selective Routing Matrix
+
+CyberGuard AI features a modular adapter architecture (`app.scanners.base.BaseScannerAdapter`). Each adapter produces a standardized `ScannerResult` dataclass specifying scanner name, version, status (`COMPLETED`, `SKIPPED`, `UNAVAILABLE`, `ERROR`), categorized `Finding` items, severity, confidence, and execution duration.
+
+To optimize performance and eliminate noise, the **`ScannerOrchestrator` selectively routes files only to relevant tools** based on the detected MIME type and file category:
+
+| Tool | Category / Scope | File Formats Inspected | Detection Capabilities | License |
+|---|---|---|---|---|
+| **ClamAV** | Antivirus Engine | All uploaded files | Known viruses, trojans, ransomware, worms | GPL-2.0 |
+| **YARA** | Rule Matching | All uploaded files | Webshells, obfuscated PowerShell, ransomware patterns | BSD-3-Clause |
+| **python-magic** | Identification | All uploaded files | True MIME type via magic bytes, extension mismatch | MIT |
+| **ExifTool** | Metadata & Polyglot | All files (especially Images, PDFs, Media) | Metadata leakage, concealed scripts (`<?php`, `eval`) | Perl Artistic / GPL |
+| **oletools (`olevba`)** | Office Documents | `.doc`, `.docx`, `.docm`, `.xls`, `.xlsx`, `.xlsm`, `.ppt` | VBA macro extraction, autoexec hooks, suspicious APIs | BSD-2-Clause |
+| **PDFiD** | PDF Structures | `.pdf` | Suspicious structural tags (`/JavaScript`, `/Launch`, `/OpenAction`, `/AA`), hex-encoded names | Public Domain |
+| **Gitleaks** | Secrets & Credentials | Scripts, Source Code, Configs (`.py`, `.js`, `.env`, `.sh`, etc.) | Hardcoded API keys, tokens (AWS, GitHub, Slack), private keys (masked in reports) | MIT |
+| **capa & DIE** | Executables | Windows PE (`.exe`, `.dll`, `.sys`) | Capabilities, section entropy, packers (UPX), high-risk APIs (`VirtualAllocEx`) | Apache-2.0 / MIT |
+
+### Standardized Result Format (`ScannerResult`)
+```python
+@dataclass
+class ScannerResult:
+    scanner_name: str
+    status: ScanStatus           # COMPLETED, SKIPPED, UNAVAILABLE, ERROR
+    findings: List[Finding]      # title, description, severity, confidence, evidence
+    severity: Severity           # CLEAN, LOW, MEDIUM, HIGH, CRITICAL
+    confidence: float            # 0.0 - 1.0
+    scanner_version: Optional[str]
+    error_message: Optional[str]
 ```
 
 ---

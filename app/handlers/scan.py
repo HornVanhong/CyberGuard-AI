@@ -50,6 +50,7 @@ from app.scanners.script_analyzer import ScriptAnalyzer
 from app.scanners.pdf_analyzer import PDFAnalyzer
 from app.scanners.archive_analyzer import ArchiveAnalyzer
 from app.scanners.office_analyzer import OfficeAnalyzer
+from app.scanners.orchestrator import ScannerOrchestrator
 from app.utils.logger import logger
 
 
@@ -171,57 +172,20 @@ async def document_upload_handler(
 
         hashes = await HashingService.compute_hashes_async(local_file_path)
 
-        # 9. Format inspection & Extension mismatch check
-        file_analysis = await asyncio.to_thread(
-            FileAnalyzer.analyze, local_file_path, clean_filename
-        )
-
-        # 10. Antivirus & Signature scanning
+        # 9. Format-Adaptive Multi-Engine Security Scan Pipeline
         try:
             await progress_msg.edit_text(t("progress_scanning", lang=lang))
         except Exception:
             pass
 
-        # Run ClamAV and YARA scans
-        clamav_task = clamav.scan_file(local_file_path)
-        yara_task = yara.scan_file(local_file_path)
+        orchestrator = ScannerOrchestrator(clamav=clamav, yara=yara)
+        orch_res = await orchestrator.execute_scan(local_file_path, clean_filename)
 
-        clamav_result, yara_result = await asyncio.gather(clamav_task, yara_task)
+        file_analysis = orch_res.file_analysis
+        clamav_result = orch_res.clamav_result
+        yara_result = orch_res.yara_result
 
-        # 11. Format-specific static analysis
-        try:
-            await progress_msg.edit_text(t("progress_deep_analysis", lang=lang))
-        except Exception:
-            pass
-
-        script_findings = None
-        pdf_findings = None
-        archive_findings = None
-        office_findings = None
-
-        ext = Path(clean_filename).suffix.lower()
-
-        # Scripts
-        if file_analysis.category == FileCategory.SCRIPT or ext in [
-            ".py", ".js", ".mjs", ".php", ".ps1", ".bat", ".cmd", ".sh", ".bash", ".vbs"
-        ]:
-            script_findings = await asyncio.to_thread(ScriptAnalyzer.analyze_file, local_file_path)
-
-        # PDF documents
-        if file_analysis.category == FileCategory.DOCUMENT and ext == ".pdf":
-            pdf_findings = await asyncio.to_thread(PDFAnalyzer.analyze_file, local_file_path)
-
-        # Archives
-        if file_analysis.category == FileCategory.ARCHIVE or ext in [".zip", ".tar", ".gz", ".tgz"]:
-            archive_findings = await asyncio.to_thread(ArchiveAnalyzer.analyze_file, local_file_path)
-
-        # Office documents
-        if file_analysis.category == FileCategory.DOCUMENT and ext in [
-            ".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm", ".doc", ".xls", ".ppt"
-        ]:
-            office_findings = await asyncio.to_thread(OfficeAnalyzer.analyze_file, local_file_path)
-
-        # 12. Optional VirusTotal Intelligence (via hash lookup only)
+        # 10. Optional VirusTotal Intelligence (via hash lookup only)
         vt_result = None
         if vt.is_configured:
             try:
@@ -230,7 +194,7 @@ async def document_upload_handler(
                 pass
             vt_result = await vt.lookup_hash(hashes.sha256)
 
-        # 13. Risk Assessment & Correlation
+        # 11. Risk Assessment & Correlation
         try:
             await progress_msg.edit_text(t("progress_correlating", lang=lang))
         except Exception:
@@ -240,14 +204,15 @@ async def document_upload_handler(
             file_analysis=file_analysis,
             clamav_result=clamav_result,
             yara_result=yara_result,
-            script_findings=script_findings,
-            pdf_findings=pdf_findings,
-            archive_findings=archive_findings,
-            office_findings=office_findings,
+            script_findings=orch_res.script_findings,
+            pdf_findings=orch_res.pdf_findings,
+            archive_findings=orch_res.archive_findings,
+            office_findings=orch_res.office_findings,
             vt_result=vt_result,
+            adapter_results=orch_res.adapter_results,
         )
 
-        # 14. Save audit record to SQLite database
+        # 12. Save audit record to SQLite database
         scan_record = ScanRecord.create(
             scan_id=scan_id,
             user_id=user_id,
@@ -263,7 +228,7 @@ async def document_upload_handler(
         )
         repo.save_scan(scan_record)
 
-        # 15. Generate structured Telegram report
+        # 13. Generate structured Telegram report
         report_text = ReportService.build_security_report(
             scan_id=scan_id,
             filename=clean_filename,
@@ -276,6 +241,7 @@ async def document_upload_handler(
             vt_result=vt_result,
             user_id=user_id,
             lang=lang,
+            adapter_results=orch_res.adapter_results,
         )
 
         keyboard = ReportService.build_report_keyboard(

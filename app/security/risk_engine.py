@@ -19,6 +19,7 @@ from app.scanners.script_analyzer import ScriptFinding, ScriptSeverity
 from app.scanners.pdf_analyzer import PDFFinding, PDFSeverity
 from app.scanners.archive_analyzer import ArchiveFinding, ArchiveSeverity
 from app.scanners.office_analyzer import OfficeFinding, OfficeSeverity
+from app.scanners.base import ScannerResult, ScanStatus, Severity as ScannerSeverity
 
 if TYPE_CHECKING:
     from app.services.virustotal_service import VTResult
@@ -96,6 +97,7 @@ class RiskEngine:
         archive_findings: Optional[List[ArchiveFinding]] = None,
         office_findings: Optional[List[OfficeFinding]] = None,
         vt_result: Optional[VTResult] = None,
+        adapter_results: Optional[List[ScannerResult]] = None,
     ) -> AssessmentResult:
         findings: List[str] = []
         recommendations: List[str] = []
@@ -201,6 +203,23 @@ class RiskEngine:
                     score += 35
                 elif vt_result.suspicious >= 1:
                     score += 15
+
+        # 9. Additional Modular Scanner Adapters (oletools, PDFiD, ExifTool, capa, diec, gitleaks)
+        if adapter_results:
+            for ar in adapter_results:
+                if ar.status == ScanStatus.COMPLETED:
+                    if ar.scanner_name not in engines_checked:
+                        engines_checked.append(ar.scanner_name)
+                    for f in ar.findings:
+                        key = f"{ar.scanner_name}_{f.title}"
+                        if key not in dedup_keys:
+                            dedup_keys.add(key)
+                            w = cls.SEVERITY_WEIGHTS.get(f.severity.value.lower(), 12)
+                            score += w
+                            findings.append(f"{ar.scanner_name}: {f.title} ({f.description})")
+                elif ar.status == ScanStatus.UNAVAILABLE:
+                    if ar.scanner_name not in engines_unavailable:
+                        engines_unavailable.append(ar.scanner_name)
 
         # Normalize score to 0..100
         normalized_score = min(score, 100)

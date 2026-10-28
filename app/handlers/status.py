@@ -9,6 +9,11 @@ from telegram.ext import ContextTypes
 from app.config import settings
 from app.i18n import t, get_user_lang
 from app.security.validation import is_user_authorized
+from app.scanners.oletools_analyzer import OletoolsAdapter
+from app.scanners.pdfid_analyzer import PDFiDAdapter
+from app.scanners.exiftool_analyzer import ExifToolAdapter
+from app.scanners.executable_analyzer import CapaAdapter, DiecAdapter
+from app.scanners.gitleaks_analyzer import GitleaksAdapter
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
 from app.services.virustotal_service import VirusTotalService
@@ -55,7 +60,15 @@ async def status_handler(
     else:
         ai_status = "⚪ Not Configured (Missing GEMINI_API_KEY)"
 
-    # 5. Database status
+    # 5. Modular Security Adapters Status
+    ole_status = "🟢 Ready" if OletoolsAdapter().is_available() else "⚪ Not Installed"
+    pdfid_status = "🟢 Ready" if PDFiDAdapter().is_available() else "⚪ Not Installed"
+    exif_status = "🟢 Ready" if ExifToolAdapter().is_available() else "⚪ Binary not in PATH"
+    capa_status = "🟢 Ready" if CapaAdapter().is_available() else "⚪ Not Installed"
+    diec_status = "🟢 Ready" if DiecAdapter().is_available() else "⚪ Binary not in PATH"
+    gitleaks_status = "🟢 Ready (Embedded & CLI)"
+
+    # 6. Database status
     try:
         repo.prune_older_than(days=settings.SCAN_RETENTION_DAYS)
         db_status = "🟢 Operational (SQLite WAL)"
@@ -68,6 +81,12 @@ async def status_handler(
         f"{t('status_yara', lang=lang, yara_status=yara_status, yara_rules_count=yara.rules_loaded_count)}\n"
         f"{t('status_vt', lang=lang, vt_status=vt_status)}\n"
         f"{t('status_ai', lang=lang, ai_status=ai_status, ai_model=settings.GEMINI_MODEL)}\n"
+        f"• *oletools (Office Macros):* {ole_status}\n"
+        f"• *PDFiD (PDF Structures):* {pdfid_status}\n"
+        f"• *ExifTool (Metadata/Polyglots):* {exif_status}\n"
+        f"• *capa / PE (Executables):* {capa_status}\n"
+        f"• *Detect It Easy (Packers):* {diec_status}\n"
+        f"• *Gitleaks (Secrets & Keys):* {gitleaks_status}\n"
         f"{t('status_db', lang=lang, db_status=db_status)}\n\n"
         f"🛡️ *Host Environment:* Isolated Container Sandbox\n"
         f"📦 *Max Allowed File:* {settings.MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB"

@@ -16,6 +16,12 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # Final runtime image
 FROM python:3.12-slim
 
+# Install runtime utilities (exiftool, libmagic)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libimage-exiftool-perl \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create dedicated non-privileged user and group
 RUN groupadd -g 10001 cyberguard && \
     useradd -u 10001 -g cyberguard -s /usr/sbin/nologin -d /app cyberguard

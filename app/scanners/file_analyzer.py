@@ -15,6 +15,13 @@ from typing import Optional, Tuple
 from app.utils.logger import logger
 
 try:
+    import magic  # type: ignore
+    _MAGIC_AVAILABLE = True
+except ImportError:
+    magic = None
+    _MAGIC_AVAILABLE = False
+
+try:
     import puremagic  # type: ignore
     _PUREMAGIC_AVAILABLE = True
 except ImportError:
@@ -159,8 +166,15 @@ class FileAnalyzer:
         detected_name = "Binary Data"
         category = FileCategory.UNKNOWN
 
-        # 1. Puremagic detection if installed
-        if _PUREMAGIC_AVAILABLE:
+        # 1. python-magic / puremagic detection
+        if _MAGIC_AVAILABLE:
+            try:
+                detected_mime = magic.from_file(str(p.resolve()), mime=True) or detected_mime
+                detected_name = magic.from_file(str(p.resolve())) or detected_name
+            except Exception as e:
+                logger.debug("python-magic detection exception: %s", e)
+
+        if _PUREMAGIC_AVAILABLE and (detected_mime == "application/octet-stream" or not _MAGIC_AVAILABLE):
             try:
                 matches = puremagic.magic_file(str(p.resolve()))
                 if matches:

@@ -16,6 +16,7 @@ from app.security.risk_engine import AssessmentResult, Verdict, RiskLevel
 from app.scanners.clamav_scanner import ClamAVResult, ClamAVStatus
 from app.scanners.yara_scanner import YaraResult, YaraStatus
 from app.scanners.file_analyzer import FileTypeAnalysis
+from app.scanners.base import ScannerResult, ScanStatus
 from app.services.virustotal_service import VTResult, VTStatus
 
 
@@ -90,6 +91,7 @@ class ReportService:
         vt_result: Optional[VTResult] = None,
         user_id: Optional[int] = None,
         lang: Optional[str] = None,
+        adapter_results: Optional[List[ScannerResult]] = None,
     ) -> str:
         """Formats the full markdown security report for Telegram."""
         if lang is None:
@@ -130,13 +132,31 @@ class ReportService:
             t("report_yara", lang=lang, result=yara_str),
             t("report_static", lang=lang, result=static_str),
             t("report_vt", lang=lang, result=vt_str),
+        ]
+
+        # Additional Modular Scanner Engines (oletools, PDFiD, ExifTool, capa, diec, gitleaks)
+        if adapter_results:
+            for ar in adapter_results:
+                if ar.scanner_name in ("ClamAV Antivirus", "YARA Pattern Engine"):
+                    continue
+                if ar.status == ScanStatus.COMPLETED:
+                    st = f"⚠️ {len(ar.findings)} finding(s)" if ar.findings else "Clean"
+                elif ar.status == ScanStatus.UNAVAILABLE:
+                    st = "Unavailable"
+                elif ar.status == ScanStatus.SKIPPED:
+                    continue
+                else:
+                    st = "Error"
+                lines.append(f"• *{ar.scanner_name}:* {st}")
+
+        lines.extend([
             "",
             t("report_divider", lang=lang),
             t("report_verdict", lang=lang, verdict=verdict_display),
             t("report_risk", lang=lang, risk_level=risk_display),
             t("report_score", lang=lang, score=assessment.score),
             "",
-        ]
+        ])
 
         # Detailed findings
         if assessment.findings:
