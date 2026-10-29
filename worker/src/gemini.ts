@@ -35,7 +35,7 @@ export async function askGemini(
     scanContext?: NormalizedScanReport;
   }
 ): Promise<string> {
-  const model = options?.model || "gemini-1.5-flash";
+  const model = options?.model || "gemini-3.5-flash";
   const lang = options?.lang || "km";
   const timeoutMs = options?.timeoutMs || 15000;
   const systemInstruction = lang === "km" ? SYSTEM_INSTRUCTION_KM : SYSTEM_INSTRUCTION_EN;

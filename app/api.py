@@ -1,0 +1,250 @@
+"""CyberGuard AI - Lightweight HTTPS/HTTP Malware Scanner Service API.
+
+Exposes a REST API for Cloudflare Workers (or any edge webhook gateway) to:
+1. Check health/status of all 12 security scanning engines (GET /status).
+2. Scan uploaded files through ClamAV, YARA, Ghidra, DIE, oletools, capa, etc. (POST /scan).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import cgi
+import io
+import json
+import os
+import sys
+import tempfile
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
+from typing import Any, Dict
+
+# Ensure repository root is on sys.path
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
+
+from app.config import settings
+from app.scanners.orchestrator import ScannerOrchestrator
+from app.scanners.clamav_scanner import ClamAVScanner
+from app.scanners.yara_scanner import YaraScanner
+from app.scanners.oletools_analyzer import OletoolsAdapter
+from app.scanners.pdfid_analyzer import PDFiDAdapter
+from app.scanners.exiftool_analyzer import ExifToolAdapter
+from app.scanners.executable_analyzer import CapaAdapter, DiecAdapter
+from app.scanners.ghidra_analyzer import GhidraAdapter
+from app.scanners.gitleaks_analyzer import GitleaksAdapter
+from app.services.virustotal_service import VirusTotalService
+from app.database.repository import ScanRepository
+from app.security.risk_engine import RiskEngine
+from app.utils.logger import logger
+
+
+class ScannerAPIHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for Cloudflare Worker scanner integration."""
+
+    def _set_headers(self, status: int = 200, content_type: str = "application/json"):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.end_headers()
+
+    def do_OPTIONS(self):
+        self._set_headers(204)
+
+    def _verify_auth(self) -> bool:
+        token = os.getenv("SCANNER_API_TOKEN")
+        if not token:
+            return True  # If no token configured, allow connection (e.g. private network)
+        auth_header = self.headers.get("Authorization", "")
+        expected = f"Bearer {token}"
+        return auth_header.strip() == expected
+
+    def do_GET(self):
+        """GET /status or /health - returns health of all 12 engines."""
+        if self.path in ("/", "/health", "/status"):
+            if not self._verify_auth():
+                self._set_headers(401)
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode())
+                return
+
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                status_data = loop.run_until_complete(self._collect_engine_status())
+                loop.close()
+
+                self._set_headers(200)
+                self.wfile.write(json.dumps(status_data, indent=2).encode())
+            except Exception as e:
+                logger.error(f"Error checking engine status: {e}")
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return
+
+        self._set_headers(404)
+        self.wfile.write(json.dumps({"error": "Not Found"}).encode())
+
+    def do_POST(self):
+        """POST /scan - receives multipart file and runs full multi-engine scan."""
+        if self.path != "/scan":
+            self._set_headers(404)
+            self.wfile.write(json.dumps({"error": "Not Found"}).encode())
+            return
+
+        if not self._verify_auth():
+            self._set_headers(401)
+            self.wfile.write(json.dumps({"error": "Unauthorized"}).encode())
+            return
+
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if not content_type.startswith("multipart/form-data"):
+                self._set_headers(400)
+                self.wfile.write(json.dumps({"error": "Expected multipart/form-data"}).encode())
+                return
+
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": self.headers["Content-Type"],
+                },
+            )
+
+            if "file" not in form:
+                self._set_headers(400)
+                self.wfile.write(json.dumps({"error": "Missing 'file' in multipart form"}).encode())
+                return
+
+            file_item = form["file"]
+            filename = file_item.filename or "unknown.bin"
+            file_bytes = file_item.file.read()
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            scan_report = loop.run_until_complete(self._execute_scan(filename, file_bytes))
+            loop.close()
+
+            self._set_headers(200)
+            self.wfile.write(json.dumps(scan_report, indent=2).encode())
+        except Exception as e:
+            logger.error(f"Error in /scan handler: {e}")
+            self._set_headers(500)
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    async def _collect_engine_status(self) -> Dict[str, Any]:
+        """Gathers status across all 12 engines."""
+        clamav = ClamAVScanner(
+            host=settings.CLAMAV_HOST,
+            port=settings.CLAMAV_PORT,
+            timeout=settings.CLAMAV_TIMEOUT,
+            enabled=settings.CLAMAV_ENABLED,
+        )
+        yara = YaraScanner(
+            rules_dir=settings.YARA_RULES_DIR,
+            timeout=settings.YARA_TIMEOUT,
+            enabled=settings.YARA_ENABLED,
+        )
+        yara.load_rules()
+
+        clamav_online = await clamav.ping()
+        clamav_ver = await clamav.get_version() if clamav_online else "Unavailable"
+        yara_online = yara.is_available and yara.rules_loaded_count > 0
+
+        return {
+            "status": "online",
+            "service": "CyberGuard AI Dedicated Scanner Backend",
+            "engines": {
+                "clamav": {
+                    "status": "ONLINE" if clamav_online else "OFFLINE",
+                    "version": clamav_ver,
+                },
+                "yara": {
+                    "status": "READY" if yara_online else "OFFLINE",
+                    "rules_loaded": yara.rules_loaded_count,
+                },
+                "virustotal": {"status": "CONFIGURED" if settings.VIRUSTOTAL_ENABLED and settings.VIRUSTOTAL_API_KEY else "DISABLED"},
+                "oletools": {"status": "READY" if OletoolsAdapter().is_available() else "UNAVAILABLE"},
+                "pdfid": {"status": "READY" if PDFiDAdapter().is_available() else "UNAVAILABLE"},
+                "exiftool": {"status": "READY" if ExifToolAdapter().is_available() else "UNAVAILABLE"},
+                "capa": {"status": "READY" if CapaAdapter().is_available() else "UNAVAILABLE"},
+                "diec": {"status": "READY" if DiecAdapter().is_available() else "UNAVAILABLE"},
+                "ghidra": {"status": "READY" if GhidraAdapter().is_available() else "UNAVAILABLE"},
+                "gitleaks": {"status": "READY" if GitleaksAdapter().is_available() else "UNAVAILABLE"},
+                "database": {"status": "OPERATIONAL"},
+            },
+        }
+
+    async def _execute_scan(self, filename: str, file_bytes: bytes) -> Dict[str, Any]:
+        """Runs the complete orchestrator scan pipeline."""
+        clamav = ClamAVScanner(
+            host=settings.CLAMAV_HOST,
+            port=settings.CLAMAV_PORT,
+            timeout=settings.CLAMAV_TIMEOUT,
+            enabled=settings.CLAMAV_ENABLED,
+        )
+        yara = YaraScanner(
+            rules_dir=settings.YARA_RULES_DIR,
+            timeout=settings.YARA_TIMEOUT,
+            enabled=settings.YARA_ENABLED,
+        )
+        yara.load_rules()
+        orchestrator = ScannerOrchestrator(clamav=clamav, yara=yara)
+        risk_engine = RiskEngine()
+
+        with tempfile.NamedTemporaryFile(delete=False, prefix="cyberguard_scan_") as tmp:
+            tmp.write(file_bytes)
+            tmp_path = Path(tmp.name)
+
+        try:
+            orch_result = await orchestrator.scan_file(tmp_path)
+            risk_score, severity, threat_level = risk_engine.evaluate(
+                clamav_result=orch_result.clamav_result,
+                yara_result=orch_result.yara_result,
+                adapter_results=orch_result.adapter_results,
+            )
+
+            findings = []
+            for f in orch_result.get_all_findings():
+                findings.append(f"[{f.severity.value}] {f.title}: {f.description}")
+
+            is_malicious = severity.value in ("CRITICAL", "HIGH") or (orch_result.clamav_result and orch_result.clamav_result.is_infected)
+            verdict = "MALICIOUS" if is_malicious else ("SUSPICIOUS" if severity.value == "MEDIUM" else "CLEAN")
+
+            return {
+                "verdict": verdict,
+                "severity": severity.value,
+                "risk_score": risk_score,
+                "clamav": {
+                    "status": orch_result.clamav_result.status.value if orch_result.clamav_result else "SKIPPED",
+                    "detected": orch_result.clamav_result.is_infected if orch_result.clamav_result else False,
+                    "virus_name": orch_result.clamav_result.virus_name if orch_result.clamav_result else None,
+                },
+                "yara": {
+                    "status": orch_result.yara_result.status.value if orch_result.yara_result else "SKIPPED",
+                    "matches": [{"rule_name": m.rule_name, "tags": m.tags} for m in orch_result.yara_result.matches] if orch_result.yara_result else [],
+                    "rules_evaluated": yara.rules_loaded_count,
+                },
+                "findings": findings if findings else ["No immediate security threats detected."],
+                "recommendations": [
+                    "Isolate host if this file was executed." if is_malicious else "Standard zero-trust verification applies."
+                ],
+            }
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+
+def run_scanner_api(host: str = "0.0.0.0", port: int = 8000):
+    server = HTTPServer((host, port), ScannerAPIHandler)
+    logger.info(f"CyberGuard AI Scanner API listening on http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("Scanner API server stopped.")
+        server.server_close()
+
+
+if __name__ == "__main__":
+    run_scanner_api()

@@ -14,7 +14,7 @@ const mockEnv: Env = {
   TELEGRAM_WEBHOOK_SECRET: "CyberGuard_Super_Secret_Webhook_Token_2026",
   SCANNER_SERVICE_URL: "https://scanner.internal.local",
   SCANNER_API_TOKEN: "scanner-secret-token-12345",
-  GEMINI_MODEL: "gemini-1.5-flash",
+  GEMINI_MODEL: "gemini-3.5-flash",
   MAX_FILE_SIZE_BYTES: "20971520",
   DEFAULT_LANGUAGE: "km",
 };

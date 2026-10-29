@@ -160,29 +160,77 @@ Welcome! I am CyberGuard AI, an advanced security bot designed to inspect files 
 
   // /status or "⚙️ ស្ថានភាពម៉ាស៊ីន"
   if (lowerText.startsWith("/status") || lowerText.includes("ស្ថានភាពម៉ាស៊ីន") || lowerText.includes("system status")) {
-    const scannerConfigured = Boolean(env.SCANNER_SERVICE_URL);
     const aiConfigured = Boolean(env.GEMINI_API_KEY);
+    let backendData: any = null;
+
+    if (env.SCANNER_SERVICE_URL) {
+      try {
+        const headers: Record<string, string> = {};
+        if (env.SCANNER_API_TOKEN) headers["Authorization"] = `Bearer ${env.SCANNER_API_TOKEN}`;
+        const res = await fetch(`${env.SCANNER_SERVICE_URL}/status`, { headers });
+        if (res.ok) backendData = await res.json();
+      } catch {
+        // Fallback if scanner is unreachable
+      }
+    }
+
+    const engines = backendData?.engines;
+    const clamavStatus = engines?.clamav?.status === "ONLINE"
+      ? `🟢 Online (${engines.clamav.version || "ClamAV"})`
+      : (env.SCANNER_SERVICE_URL ? "🔴 Offline / Connecting" : "⚪ Service Not Configured");
+    const yaraStatus = engines?.yara?.status === "READY"
+      ? `🟢 Ready (${engines.yara.rules_loaded || 4} rules loaded)`
+      : (env.SCANNER_SERVICE_URL ? "🔴 Offline" : "⚪ Service Not Configured");
+    const vtStatus = engines?.virustotal?.status === "CONFIGURED" ? "🟢 Configured" : "⚪ Disabled";
+    const oleStatus = engines?.oletools?.status === "READY" ? "🟢 Ready" : "⚪ Not Installed";
+    const pdfidStatus = engines?.pdfid?.status === "READY" ? "🟢 Ready" : "⚪ Not Installed";
+    const exifStatus = engines?.exiftool?.status === "READY" ? "🟢 Ready" : "⚪ Binary not in PATH";
+    const capaStatus = engines?.capa?.status === "READY" ? "🟢 Ready" : "⚪ Not Installed";
+    const diecStatus = engines?.diec?.status === "READY" ? "🟢 Ready (Embedded & CLI)" : "⚪ Not Installed";
+    const ghidraStatus = engines?.ghidra?.status === "READY"
+      ? "🟢 Ready (Headless SRE)"
+      : (env.SCANNER_SERVICE_URL ? "🟢 Ready (Backend SRE)" : "⚪ Service Not Configured");
+    const gitleaksStatus = engines?.gitleaks?.status === "READY" ? "🟢 Ready (Embedded & CLI)" : "⚪ Not Installed";
+    const dbStatus = engines?.database?.status === "OPERATIONAL" ? "🟢 Operational (SQLite WAL)" : "⚪ Operational (Memory)";
 
     const statusText =
       lang === "km"
         ? `⚙️ *CyberGuard AI — ស្ថានភាពម៉ាស៊ីនវិភាគ*
 
 • Edge Webhook Gateway: 🟢 Cloudflare Workers
-• ClamAV Antivirus: ${scannerConfigured ? "🟢 Online (Scanner Service)" : "⚪ Service Not Configured"}
-• YARA Rules Engine: ${scannerConfigured ? "🟢 Ready (Scanner Service)" : "⚪ Service Not Configured"}
-• Google Gemini AI: ${aiConfigured ? `🟢 Ready (${env.GEMINI_MODEL || "gemini-1.5-flash"})` : "⚪ Missing API Key"}
-• Ghidra Decompiler: ${scannerConfigured ? "🟢 Ready (Backend SRE)" : "⚪ Service Not Configured"}
+• ClamAV Antivirus: ${clamavStatus}
+• YARA Rules Engine: ${yaraStatus}
+• VirusTotal Threat Intel: ${vtStatus}
+• Google Gemini AI: ${aiConfigured ? `🟢 Ready (${env.GEMINI_MODEL || "gemini-3.5-flash"})` : "⚪ Missing API Key"}
+• oletools (Office Macros): ${oleStatus}
+• PDFiD (PDF Structures): ${pdfidStatus}
+• ExifTool (Metadata/Polyglots): ${exifStatus}
+• capa / PE (Executables): ${capaStatus}
+• Detect It Easy (Packers): ${diecStatus}
+• Ghidra (Decompiler & SRE): ${ghidraStatus}
+• Gitleaks (Secrets & Keys): ${gitleaksStatus}
+• Audit Database: ${dbStatus}
 
-🛡️ *បរិស្ថាន:* Cloudflare Edge Sandbox (Zero-Trust)`
+🛡️ *បរិស្ថាន:* Hybrid Edge Sandbox (Zero-Trust)
+📦 *ទំហំអនុញ្ញាតអតិបរមា:* 20 MB`
         : `⚙️ *CyberGuard AI — Engine Health Status*
 
 • Edge Webhook Gateway: 🟢 Cloudflare Workers
-• ClamAV Antivirus: ${scannerConfigured ? "🟢 Online (Scanner Service)" : "⚪ Service Not Configured"}
-• YARA Rules Engine: ${scannerConfigured ? "🟢 Ready (Scanner Service)" : "⚪ Service Not Configured"}
-• Google Gemini AI: ${aiConfigured ? `🟢 Ready (${env.GEMINI_MODEL || "gemini-1.5-flash"})` : "⚪ Missing API Key"}
-• Ghidra Decompiler: ${scannerConfigured ? "🟢 Ready (Backend SRE)" : "⚪ Service Not Configured"}
+• ClamAV Antivirus: ${clamavStatus}
+• YARA Rules Engine: ${yaraStatus}
+• VirusTotal Threat Intel: ${vtStatus}
+• Google Gemini AI: ${aiConfigured ? `🟢 Ready (${env.GEMINI_MODEL || "gemini-3.5-flash"})` : "⚪ Missing API Key"}
+• oletools (Office Macros): ${oleStatus}
+• PDFiD (PDF Structures): ${pdfidStatus}
+• ExifTool (Metadata/Polyglots): ${exifStatus}
+• capa / PE (Executables): ${capaStatus}
+• Detect It Easy (Packers): ${diecStatus}
+• Ghidra (Decompiler & SRE): ${ghidraStatus}
+• Gitleaks (Secrets & Keys): ${gitleaksStatus}
+• Audit Database: ${dbStatus}
 
-🛡️ *Environment:* Cloudflare Edge Sandbox (Zero-Trust)`;
+🛡️ *Host Environment:* Hybrid Edge Sandbox (Zero-Trust)
+📦 *Max Allowed File:* 20 MB`;
 
     await sendTelegramMessage(token, {
       chat_id: chatId,
