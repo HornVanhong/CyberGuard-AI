@@ -2,8 +2,9 @@
  * CyberGuard AI - Telegram Command & Message Router
  */
 
-import { askGemini } from "./gemini";
+import { askGemini, analyzePhishingWithGemini } from "./gemini";
 import { scanFile } from "./scanner";
+import { extractUrls, analyzeMessageHeuristics } from "./security";
 import {
   sendTelegramMessage,
   sendChatAction,
@@ -162,12 +163,13 @@ Welcome! I am CyberGuard AI, an advanced security bot designed to inspect files 
   if (lowerText.startsWith("/status") || lowerText.includes("ស្ថានភាពម៉ាស៊ីន") || lowerText.includes("system status")) {
     const aiConfigured = Boolean(env.GEMINI_API_KEY);
     let backendData: any = null;
+    const scannerUrl = env.SCANNER_SERVICE_URL || "https://karaoke-goat-dude-gamecube.trycloudflare.com";
 
-    if (env.SCANNER_SERVICE_URL) {
+    if (scannerUrl) {
       try {
         const headers: Record<string, string> = {};
         if (env.SCANNER_API_TOKEN) headers["Authorization"] = `Bearer ${env.SCANNER_API_TOKEN}`;
-        const res = await fetch(`${env.SCANNER_SERVICE_URL}/status`, { headers });
+        const res = await fetch(`${scannerUrl}/status`, { headers });
         if (res.ok) backendData = await res.json();
       } catch {
         // Fallback if scanner is unreachable
@@ -177,10 +179,10 @@ Welcome! I am CyberGuard AI, an advanced security bot designed to inspect files 
     const engines = backendData?.engines;
     const clamavStatus = engines?.clamav?.status === "ONLINE"
       ? `🟢 Online (${engines.clamav.version || "ClamAV"})`
-      : (env.SCANNER_SERVICE_URL ? "🔴 Offline / Connecting" : "⚪ Service Not Configured");
+      : (scannerUrl ? "🔴 Offline / Connecting" : "⚪ Service Not Configured");
     const yaraStatus = engines?.yara?.status === "READY"
       ? `🟢 Ready (${engines.yara.rules_loaded || 4} rules loaded)`
-      : (env.SCANNER_SERVICE_URL ? "🔴 Offline" : "⚪ Service Not Configured");
+      : (scannerUrl ? "🔴 Offline" : "⚪ Service Not Configured");
     const vtStatus = engines?.virustotal?.status === "CONFIGURED" ? "🟢 Configured" : "⚪ Disabled";
     const oleStatus = engines?.oletools?.status === "READY" ? "🟢 Ready" : "⚪ Not Installed";
     const pdfidStatus = engines?.pdfid?.status === "READY" ? "🟢 Ready" : "⚪ Not Installed";
@@ -330,6 +332,69 @@ To decompile and analyze executable binaries (.exe, .dll, .elf):
     return;
   }
 
+  // /link, /check, /url, or "🔗 វិភាគ Link & សារ"
+  const isLinkCommand =
+    lowerText.startsWith("/link") ||
+    lowerText.startsWith("/check") ||
+    lowerText.startsWith("/url") ||
+    lowerText.includes("វិភាគ link") ||
+    lowerText.includes("check link");
+
+  let targetForLinkAnalysis: string | null = null;
+  if (lowerText.startsWith("/link") || lowerText.startsWith("/check") || lowerText.startsWith("/url")) {
+    const rawTarget = text.replace(/^\/(?:link|check|url)\s*/i, "").trim();
+    if (rawTarget) targetForLinkAnalysis = rawTarget;
+  }
+
+  if (isLinkCommand && !targetForLinkAnalysis) {
+    const linkGuide =
+      lang === "km"
+        ? `🔗 *CyberGuard AI — វិភាគ Link & សារបន្លំ (Phishing/Scam)*
+
+សូមផ្ញើ ឬ Forward តំណភ្ជាប់ (Link/URL) ឬអត្ថបទសារដែលគួរឱ្យសង្ស័យមកកាន់ទីនេះ៖
+
+✨ *មុខងារវិភាគរួមមាន៖*
+• កំណត់សម្គាល់ Bare IP, URL Shorteners (bit.ly, tinyurl)
+• High-Risk TLDs (.xyz, .top, .buzz, etc.) & Punycode Spoofing
+• ការក្លែងបន្លំម៉ាកសញ្ញា (ABA, ACLEDA, Telegram, Binance, Google, etc.)
+• យុទ្ធសាស្ត្រល្បួងបន្លំ Social Engineering (គំរាមបិទគណនី, ឈ្នះរង្វាន់, លួច OTP)
+• ការត្រួតពិនិត្យ Threat Intel (VirusTotal) & Gemini 3.5 Flash Explanation
+
+_អ្នកអាចផ្ញើសារ ឬ Link មកទីនេះដោយផ្ទាល់បានភ្លាមៗ!_`
+        : `🔗 *CyberGuard AI — Link & Phishing Message Analyzer*
+
+Please send or forward any suspicious link (URL) or message to this chat:
+
+✨ *Inspection capabilities:*
+• Bare IP hosts, URL Shorteners (bit.ly, tinyurl) & High-risk TLDs
+• Brand impersonation checks (Banks, Telegram, Google, PayPal, Binance)
+• Social engineering heuristics (Urgency, fake rewards, OTP harvesting)
+• VirusTotal Threat Intelligence & Google Gemini 3.5 Flash explanation
+
+_You can also paste a URL directly or use \`/check <url or message>\`!_`;
+
+    await sendTelegramMessage(token, {
+      chat_id: chatId,
+      text: linkGuide,
+      parse_mode: "Markdown",
+      reply_markup: getReplyKeyboard(lang),
+    });
+    return;
+  }
+
+  // Auto-detect URLs in text or explicit link check target
+  const detectedUrls = extractUrls(text);
+  if (targetForLinkAnalysis || detectedUrls.length > 0) {
+    const analysisTarget = targetForLinkAnalysis || text;
+    const linkPromise = handleLinkAnalysis(token, chatId, analysisTarget, env, lang);
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(linkPromise);
+    } else {
+      await linkPromise;
+    }
+    return;
+  }
+
   // 3. General Cybersecurity Question to Gemini AI
   await sendChatAction(token, chatId, "typing");
   let queryText = text;
@@ -352,7 +417,7 @@ To decompile and analyze executable binaries (.exe, .dll, .elf):
   }
 
   const aiAnswer = await askGemini(env.GEMINI_API_KEY, queryText, {
-    model: env.GEMINI_MODEL,
+    model: env.GEMINI_MODEL || "gemini-3-flash-preview",
     lang,
   });
 
@@ -490,4 +555,141 @@ ${aiExplanation}
       reply_markup: getReplyKeyboard(lang),
     });
   }
+}
+
+/**
+ * Handles suspicious message and malicious/phishing link analysis.
+ */
+async function handleLinkAnalysis(
+  token: string,
+  chatId: number,
+  targetText: string,
+  env: Env,
+  lang: string
+): Promise<void> {
+  const loadingMsg =
+    lang === "km"
+      ? "🔄 *កំពុងវិភាគសុវត្ថិភាព Link និងទម្រង់សារ (Zero-Trust Phishing Inspection)...*\n_សូមរង់ចាំបន្តិច..._"
+      : "🔄 *Analyzing URL and message safety (Zero-Trust Phishing Inspection)...*\n_Please wait a moment..._";
+
+  await sendTelegramMessage(token, {
+    chat_id: chatId,
+    text: loadingMsg,
+    parse_mode: "Markdown",
+  });
+
+  const heuristics = analyzeMessageHeuristics(targetText);
+
+  // If Scanner backend is configured, query VirusTotal threat intelligence
+  let vtMalicious = 0;
+  let vtTotal = 0;
+  let backendChecked = false;
+
+  const scannerUrl = env.SCANNER_SERVICE_URL || "https://karaoke-goat-dude-gamecube.trycloudflare.com";
+  if (scannerUrl && heuristics.urls.length > 0) {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (env.SCANNER_API_TOKEN) headers["Authorization"] = `Bearer ${env.SCANNER_API_TOKEN}`;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch(`${scannerUrl}/check_url`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ url: heuristics.urls[0], text: targetText }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        backendChecked = true;
+        const vtData = (await res.json()) as any;
+        if (vtData.vt_malicious !== undefined) {
+          vtMalicious = vtData.vt_malicious;
+          vtTotal = vtData.vt_total;
+          if (vtMalicious > 0) {
+            heuristics.redFlags.push(
+              `VirusTotal Threat Intel: ${vtMalicious}/${vtTotal} security engines detected this as malicious`
+            );
+            heuristics.riskScore = Math.max(heuristics.riskScore, Math.min(85 + vtMalicious * 5, 100));
+            heuristics.verdict = "MALICIOUS";
+          }
+        }
+      }
+    } catch {
+      // Backend lookup timed out or failed; continue with edge heuristics
+    }
+  }
+
+  // Get Gemini AI explanation
+  let aiExplanation = "";
+  if (env.GEMINI_API_KEY) {
+    aiExplanation = await analyzePhishingWithGemini(
+      env.GEMINI_API_KEY,
+      targetText,
+      {
+        ...heuristics,
+        vtMalicious,
+        vtTotal,
+      },
+      { lang, model: env.GEMINI_MODEL }
+    );
+  }
+
+  // Format Report
+  const verdictEmoji =
+    heuristics.verdict === "MALICIOUS" ? "🔴" : heuristics.verdict === "SUSPICIOUS" ? "🟡" : "🟢";
+  const verdictText =
+    lang === "km"
+      ? (heuristics.verdict === "MALICIOUS" ? "MALICIOUS (គ្រោះថ្នាក់ខ្លាំង)" : heuristics.verdict === "SUSPICIOUS" ? "SUSPICIOUS (គួរឱ្យសង្ស័យ)" : "LIKELY SAFE (ទំនងជាសុវត្ថិភាព)")
+      : (heuristics.verdict === "MALICIOUS" ? "MALICIOUS (High Threat)" : heuristics.verdict === "SUSPICIOUS" ? "SUSPICIOUS (Exercise Caution)" : "LIKELY SAFE (Low Risk)");
+
+  const targetLabel = heuristics.urls.length > 0 ? heuristics.urls[0] : (targetText.length > 60 ? targetText.slice(0, 57) + "..." : targetText);
+
+  const vtLine = backendChecked && vtTotal > 0
+    ? (lang === "km" ? `\n🛡️ *VirusTotal Intel:* ${vtMalicious}/${vtTotal} ម៉ាស៊ីនរកឃើញគ្រោះថ្នាក់` : `\n🛡️ *VirusTotal Intel:* ${vtMalicious}/${vtTotal} engines flagged`)
+    : "";
+
+  let flagsSection = "";
+  if (heuristics.redFlags.length > 0) {
+    flagsSection =
+      (lang === "km" ? "\n\n⚠️ *សញ្ញាសម្គាល់ហានិភ័យ (Red Flags):*\n" : "\n\n⚠️ *Threat Indicators (Red Flags):*\n") +
+      heuristics.redFlags.map((rf) => `• ${rf}`).join("\n");
+  }
+
+  let tacticsSection = "";
+  if (heuristics.tactics.length > 0) {
+    tacticsSection =
+      (lang === "km" ? "\n\n🎭 *វិធីសាស្ត្រល្បួងបន្លំ (Social Engineering):*\n" : "\n\n🎭 *Social Engineering Tactics:*\n") +
+      heuristics.tactics.map((t) => `• ${t}`).join("\n");
+  }
+
+  const aiSection = aiExplanation
+    ? (lang === "km" ? `\n\n🤖 *ការវិភាគពី Gemini AI:*\n${aiExplanation}` : `\n\n🤖 *Gemini AI Assessment:*\n${aiExplanation}`)
+    : "";
+
+  let recsSection = "";
+  if (heuristics.recommendations.length > 0) {
+    recsSection =
+      (lang === "km" ? "\n\n💡 *ការណែនាំសុវត្ថិភាព:*\n" : "\n\n💡 *Security Recommendations:*\n") +
+      heuristics.recommendations.map((r) => `• ${r}`).join("\n");
+  }
+
+  const header = lang === "km"
+    ? `🔗 *CyberGuard AI — របាយការណ៍វិភាគ Link & សារ*`
+    : `🔗 *CyberGuard AI — Link & Phishing Analysis Report*`;
+
+  const report = `${header}
+
+🎯 *គោលដៅវិភាគ / Target:* \`${targetLabel}\`
+📊 *ការវាយតម្លៃ:* ${verdictEmoji} *${verdictText}*
+📈 *ពិន្ទុហានិភ័យ (Risk Score):* ${heuristics.riskScore}/100${vtLine}${tacticsSection}${flagsSection}${aiSection}${recsSection}`;
+
+  await sendTelegramMessage(token, {
+    chat_id: chatId,
+    text: report,
+    parse_mode: "Markdown",
+    reply_markup: getReplyKeyboard(lang),
+  });
 }

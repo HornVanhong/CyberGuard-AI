@@ -56,6 +56,10 @@ def clean_ai_telegram_output(text: str) -> str:
 
     # 6. Normalize spacing
     text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # 7. Clean up dangling/unbalanced asterisks and broken bullet artifacts
+    text = re.sub(r"\*\s*\*", "•", text)
+    text = re.sub(r"\s*\*+\s*$", "", text, flags=re.MULTILINE)
     return text.strip()
 
 
@@ -126,9 +130,9 @@ class AIService:
     def __init__(
         self,
         api_key: str = "",
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3-flash-preview",
         timeout: float = 25.0,
-        max_output_tokens: int = 1500,
+        max_output_tokens: int = 2048,
         enabled: bool = True,
     ) -> None:
         self.api_key = api_key.strip()
@@ -345,7 +349,7 @@ Observed Findings:
                 "3. ចំពោះពាក្យបច្ចេកទេស អាចរក្សាពាក្យអង់គ្លេសក្នុងវង់ក្រចកបាន ឧទាហរណ៍៖ កម្មវិធីដំណើរការ (Executable .exe)។\n\n"
                 "ទម្រង់សារ TELEGRAM (TELEGRAM FORMATTING TEMPLATE):\n"
                 "1. ហាមប្រើសញ្ញា #, ##, ### (Headers) និងហាមប្រើសញ្ញា --- (Dividers) ដាច់ខាត។\n"
-                "2. ត្រូវរៀបចំទម្រង់ឆ្លើយឱ្យស្អាត ខ្លី ខ្លឹម រហ័ស (ក្រោម ១២០ ពាក្យ) តាមលំនាំគំរូដូចខាងក្រោម៖\n\n"
+                "2. ត្រូវរៀបចំទម្រង់ឆ្លើយឱ្យស្អាត ច្បាស់លាស់ ពេញលេញ និងមានរបៀបរៀបរយ តាមលំនាំគំរូដូចខាងក្រោម៖\n\n"
                 "💡 *ការពន្យល់សង្ខេប (Summary):*\n"
                 "<ការពន្យល់ខ្លី ងាយយល់ ចំប្រធានបទ ១ ទៅ ២ កថាខណ្ឌខ្លី>\n\n"
                 "🔍 *ចំណុចសំខាន់ៗ (Key Points):*\n"
@@ -379,7 +383,7 @@ Observed Findings:
         try:
             config = types.GenerateContentConfig(
                 temperature=0.2,
-                max_output_tokens=min(self.max_output_tokens, 450),
+                max_output_tokens=min(self.max_output_tokens, 2048),
                 system_instruction=system_instruction,
             )
 

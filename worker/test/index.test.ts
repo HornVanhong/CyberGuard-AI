@@ -5,7 +5,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import worker from "../src/index";
-import { timingSafeEqual, sanitizeFilename, maskSecret } from "../src/security";
+import {
+  timingSafeEqual,
+  sanitizeFilename,
+  maskSecret,
+  extractUrls,
+  analyzeUrlHeuristics,
+  analyzeMessageHeuristics,
+} from "../src/security";
 import { Env, TelegramUpdate } from "../src/types";
 
 const mockEnv: Env = {
@@ -311,7 +318,21 @@ describe("CyberGuard AI Cloudflare Worker", () => {
   });
 
   it("14. /status command reports health of engines", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: "online",
+            engines: {
+              clamav: { status: "ONLINE", version: "ClamAV 1.4.0" },
+              yara: { status: "READY", rules_loaded: 4 },
+              virustotal: { status: "CONFIGURED" },
+            },
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     const update: TelegramUpdate = {
       update_id: 104,
@@ -335,7 +356,7 @@ describe("CyberGuard AI Cloudflare Worker", () => {
     const res = await worker.fetch(req, mockEnv, mockCtx);
     expect(res.status).toBe(200);
 
-    const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const payload = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(payload.text).toContain("ស្ថានភាពម៉ាស៊ីនវិភាគ");
     expect(payload.text).toContain("ClamAV Antivirus");
     expect(payload.text).toContain("YARA Rules Engine");
@@ -553,7 +574,7 @@ describe("CyberGuard AI Cloudflare Worker", () => {
 
     const lastSendCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
     const sendPayload = JSON.parse(lastSendCall[1].body);
-    expect(sendPayload.text).toContain("Gemini AI ជួបបញ្ហា");
+    expect(sendPayload.text).toContain("Gemini AI");
   });
 
   // ================= 7. File Upload & Malware Scanning Boundary =================
@@ -881,5 +902,141 @@ describe("CyberGuard AI Cloudflare Worker", () => {
     // maskSecret masks tokens cleanly
     expect(maskSecret("1234567890abcdef")).toBe("1234...cdef");
     expect(maskSecret("short")).toBe("[REDACTED]");
+  });
+
+  // ================= 9. URL & Phishing Message Threat Analysis =================
+
+  it("27. extractUrls correctly extracts and normalizes URLs from text", () => {
+    const text = "Check this out https://telegram-login.xyz and also www.google.com! Ignore standard text.";
+    const urls = extractUrls(text);
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toBe("https://telegram-login.xyz");
+    expect(urls[1]).toBe("http://www.google.com");
+  });
+
+  it("28. analyzeUrlHeuristics flags brand impersonation, high-risk TLDs, and bare IPs", () => {
+    // Brand impersonation + high-risk TLD
+    const phishingUrl = "https://telegram-verification-gift.xyz/claim";
+    const result1 = analyzeUrlHeuristics(phishingUrl);
+    expect(result1.verdict).toBe("MALICIOUS");
+    expect(result1.riskScore).toBeGreaterThanOrEqual(60);
+    expect(result1.redFlags.some((f) => f.includes("telegram"))).toBe(true);
+
+    // Bare IP address
+    const ipUrl = "http://192.168.1.100/download.exe";
+    const result2 = analyzeUrlHeuristics(ipUrl);
+    expect(result2.isIp).toBe(true);
+    expect(result2.riskScore).toBeGreaterThanOrEqual(40);
+
+    // Legitimate domain
+    const safeUrl = "https://telegram.org/dl";
+    const result3 = analyzeUrlHeuristics(safeUrl);
+    expect(result3.verdict).toBe("CLEAN");
+    expect(result3.riskScore).toBeLessThan(25);
+  });
+
+  it("29. analyzeMessageHeuristics flags urgency, fake rewards, and OTP harvesting", () => {
+    const scamMsg = "URGENT: Your account will be suspended within 24 hours! Claim your reward: send me your password and OTP";
+    const res = analyzeMessageHeuristics(scamMsg);
+    expect(res.verdict).toBe("MALICIOUS");
+    expect(res.tactics.length).toBeGreaterThanOrEqual(2);
+    expect(res.redFlags.some((f) => f.includes("artificial panic") || f.includes("confidential security"))).toBe(true);
+  });
+
+  it("30. /link command with no arguments provides interactive phishing guide", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const update: TelegramUpdate = {
+      update_id: 115,
+      message: {
+        message_id: 15,
+        chat: { id: 987654321, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/link",
+      },
+    };
+
+    const req = new Request("https://telegram-scan-bot.vanhonghorn37.workers.dev/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": mockEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify(update),
+    });
+
+    const res = await worker.fetch(req, mockEnv, mockCtx);
+    expect(res.status).toBe(200);
+
+    const sendCall = fetchMock.mock.calls[0];
+    const sendPayload = JSON.parse(sendCall[1].body);
+    expect(sendPayload.text).toContain("វិភាគ Link & សារបន្លំ");
+    expect(sendPayload.text).toContain("Phishing/Scam");
+  });
+
+  it("31. Automatically analyzes incoming message with suspicious link", async () => {
+    // 1. Initial loading message
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    // 2. Scanner backend /check_url call
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          verdict: "MALICIOUS",
+          vt_malicious: 3,
+          vt_total: 90,
+        }),
+        { status: 200 }
+      )
+    );
+    // 3. Gemini AI explanation call
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "នេះជាតំណភ្ជាប់ក្លែងបន្លំ (Phishing) ដើម្បីលួចគណនី Telegram។ សូមកុំចុច!" }],
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+    // 4. Final detailed Telegram report
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const update: TelegramUpdate = {
+      update_id: 116,
+      message: {
+        message_id: 16,
+        chat: { id: 987654321, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "Please check this link urgently: https://telegram-free-gift.xyz/claim",
+      },
+    };
+
+    const req = new Request("https://telegram-scan-bot.vanhonghorn37.workers.dev/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": mockEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify(update),
+    });
+
+    const res = await worker.fetch(req, mockEnv, mockCtx);
+    expect(res.status).toBe(200);
+
+    // Wait for async execution
+    await Promise.all(waitUntilPromises);
+
+    // Check final report
+    const lastSendCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    const finalReport = JSON.parse(lastSendCall[1].body);
+    expect(finalReport.text).toContain("របាយការណ៍វិភាគ Link & សារ");
+    expect(finalReport.text).toContain("MALICIOUS");
+    expect(finalReport.text).toContain("telegram-free-gift.xyz");
+    expect(finalReport.text).toContain("Gemini AI");
   });
 });

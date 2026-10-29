@@ -24,6 +24,7 @@ def get_bot_commands(lang: str = "en") -> List[BotCommand]:
         return [
             BotCommand("start", "🚀 ចាប់ផ្តើម Bot និងបើកផ្ទាំងមឺនុយមេ"),
             BotCommand("scan", "🔍 ស្កេនឯកសារស្វែងរកមេរោគ"),
+            BotCommand("check", "🔗 វិភាគ Link & សារបន្លំ (Phishing/Scam)"),
             BotCommand("status", "⚙️ ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន និង AI"),
             BotCommand("ask", "💬 សួរសំណួរសន្តិសុខសាយប័រជាមួយ AI"),
             BotCommand("explain", "💡 ពន្យល់លម្អិតពីលទ្ធផលស្កេនឯកសារ"),
@@ -38,6 +39,7 @@ def get_bot_commands(lang: str = "en") -> List[BotCommand]:
     return [
         BotCommand("start", "🚀 Start bot and show main menu"),
         BotCommand("scan", "🔍 Scan a file for malware & threats"),
+        BotCommand("check", "🔗 Check suspicious links & phishing text"),
         BotCommand("status", "⚙️ Check scanner engines & AI health"),
         BotCommand("ask", "💬 Ask cybersecurity AI assistant"),
         BotCommand("explain", "💡 Explain scan findings with Gemini AI"),

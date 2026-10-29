@@ -31,10 +31,12 @@ from app.scanners.exiftool_analyzer import ExifToolAdapter
 from app.scanners.executable_analyzer import CapaAdapter, DiecAdapter
 from app.scanners.ghidra_analyzer import GhidraAdapter
 from app.scanners.gitleaks_analyzer import GitleaksAdapter
+from app.scanners.url_analyzer import UrlAnalyzer
 from app.services.virustotal_service import VirusTotalService
 from app.database.repository import ScanRepository
-from app.security.risk_engine import RiskEngine
+from app.security.risk_engine import RiskEngine, Verdict
 from app.utils.logger import logger
+from dataclasses import asdict
 
 
 class ScannerAPIHandler(BaseHTTPRequestHandler):
@@ -85,8 +87,8 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"error": "Not Found"}).encode())
 
     def do_POST(self):
-        """POST /scan - receives multipart file and runs full multi-engine scan."""
-        if self.path != "/scan":
+        """POST /scan (multipart file scan) or POST /check_url (JSON URL & message analysis)."""
+        if self.path not in ("/scan", "/check_url"):
             self._set_headers(404)
             self.wfile.write(json.dumps({"error": "Not Found"}).encode())
             return
@@ -94,6 +96,45 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
         if not self._verify_auth():
             self._set_headers(401)
             self.wfile.write(json.dumps({"error": "Unauthorized"}).encode())
+            return
+
+        if self.path == "/check_url":
+            try:
+                content_len = int(self.headers.get("Content-Length", 0))
+                raw_body = self.rfile.read(content_len).decode("utf-8")
+                payload = json.loads(raw_body) if raw_body else {}
+
+                url = payload.get("url", "").strip()
+                text = payload.get("text", "").strip()
+
+                vt = VirusTotalService(
+                    api_key=settings.VIRUSTOTAL_API_KEY,
+                    enabled=settings.VIRUSTOTAL_ENABLED,
+                )
+                analyzer = UrlAnalyzer(vt_service=vt)
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                if url:
+                    result = loop.run_until_complete(analyzer.analyze_url(url))
+                    data = asdict(result)
+                elif text:
+                    result = loop.run_until_complete(analyzer.analyze_message(text))
+                    data = asdict(result)
+                else:
+                    loop.close()
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Missing 'url' or 'text' in payload"}).encode())
+                    return
+
+                loop.close()
+                self._set_headers(200)
+                self.wfile.write(json.dumps(data, indent=2).encode())
+            except Exception as e:
+                logger.error(f"Error in /check_url handler: {e}")
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
             return
 
         try:
@@ -198,37 +239,46 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
             tmp_path = Path(tmp.name)
 
         try:
-            orch_result = await orchestrator.scan_file(tmp_path)
-            risk_score, severity, threat_level = risk_engine.evaluate(
+            orch_result = await orchestrator.execute_scan(tmp_path, filename)
+            assessment = RiskEngine.evaluate(
+                file_analysis=orch_result.file_analysis,
                 clamav_result=orch_result.clamav_result,
                 yara_result=orch_result.yara_result,
+                script_findings=orch_result.script_findings,
+                pdf_findings=orch_result.pdf_findings,
+                archive_findings=orch_result.archive_findings,
+                office_findings=orch_result.office_findings,
                 adapter_results=orch_result.adapter_results,
             )
 
-            findings = []
-            for f in orch_result.get_all_findings():
-                findings.append(f"[{f.severity.value}] {f.title}: {f.description}")
+            is_malicious = assessment.verdict == Verdict.MALICIOUS or assessment.is_av_positive
+            verdict_str = "MALICIOUS" if is_malicious else ("SUSPICIOUS" if assessment.verdict == Verdict.SUSPICIOUS else "CLEAN")
 
-            is_malicious = severity.value in ("CRITICAL", "HIGH") or (orch_result.clamav_result and orch_result.clamav_result.is_infected)
-            verdict = "MALICIOUS" if is_malicious else ("SUSPICIOUS" if severity.value == "MEDIUM" else "CLEAN")
+            clamav_detected = orch_result.clamav_result.is_threat if orch_result.clamav_result else False
+            virus_name = orch_result.clamav_result.malware_name if orch_result.clamav_result else None
+
+            yara_matches = []
+            if orch_result.yara_result and orch_result.yara_result.matches:
+                for m in orch_result.yara_result.matches:
+                    yara_matches.append({"rule_name": m.rule, "tags": m.tags})
 
             return {
-                "verdict": verdict,
-                "severity": severity.value,
-                "risk_score": risk_score,
+                "verdict": verdict_str,
+                "severity": assessment.risk_level.value,
+                "risk_score": assessment.score,
                 "clamav": {
                     "status": orch_result.clamav_result.status.value if orch_result.clamav_result else "SKIPPED",
-                    "detected": orch_result.clamav_result.is_infected if orch_result.clamav_result else False,
-                    "virus_name": orch_result.clamav_result.virus_name if orch_result.clamav_result else None,
+                    "detected": clamav_detected,
+                    "virus_name": virus_name,
                 },
                 "yara": {
                     "status": orch_result.yara_result.status.value if orch_result.yara_result else "SKIPPED",
-                    "matches": [{"rule_name": m.rule_name, "tags": m.tags} for m in orch_result.yara_result.matches] if orch_result.yara_result else [],
+                    "matches": yara_matches,
                     "rules_evaluated": yara.rules_loaded_count,
                 },
-                "findings": findings if findings else ["No immediate security threats detected."],
-                "recommendations": [
-                    "Isolate host if this file was executed." if is_malicious else "Standard zero-trust verification applies."
+                "findings": assessment.findings if assessment.findings else ["No immediate security threats detected."],
+                "recommendations": assessment.recommendations if assessment.recommendations else [
+                    "Standard zero-trust verification applies."
                 ],
             }
         finally:

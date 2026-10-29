@@ -6,6 +6,24 @@ import { NormalizedScanReport } from "./types";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
+export function cleanTelegramMarkdown(text: string): string {
+  if (!text) return "";
+  let clean = text;
+  // Convert markdown headers (### Header) to bold (*Header*)
+  clean = clean.replace(/^#{1,6}\s*(.+)$/gm, "*$1*");
+  // Normalize bullet points: "*   **" to "• *"
+  clean = clean.replace(/^\s*[\*\-]\s+\*\*/gm, "• **");
+  clean = clean.replace(/^\s*[\*\-]\s+/gm, "• ");
+  // Remove markdown horizontal dividers (---, ***)
+  clean = clean.replace(/^\s*[-*_]{3,}\s*$/gm, "");
+  // Replace stray double asterisks/artifacts
+  clean = clean.replace(/\*\s*\*/g, "•");
+  clean = clean.replace(/\s*\*+\s*$/gm, "");
+  // Replace stray Thai/Lao mis-generations with proper Khmer
+  clean = clean.replace(/[\u0E00-\u0EFF]+/g, "");
+  return clean.trim();
+}
+
 const SYSTEM_INSTRUCTION_EN = `You are CyberGuard AI, an expert cybersecurity assistant and malware analyst.
 Your duties:
 1. Provide accurate, professional cybersecurity advice and threat explanations.
@@ -35,7 +53,12 @@ export async function askGemini(
     scanContext?: NormalizedScanReport;
   }
 ): Promise<string> {
-  const model = options?.model || "gemini-3.5-flash";
+  const modelsToTry = [
+    "gemini-3-flash-preview",
+    options?.model,
+    "gemini-3.5-flash",
+  ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) as string[];
+
   const lang = options?.lang || "km";
   const timeoutMs = options?.timeoutMs || 15000;
   const systemInstruction = lang === "km" ? SYSTEM_INSTRUCTION_KM : SYSTEM_INSTRUCTION_EN;
@@ -59,74 +82,162 @@ User Inquiry:
 ${sanitizedPrompt}`;
   }
 
-  const endpoint = `${GEMINI_BASE_URL}/${model}:generateContent?key=${apiKey}`;
+  for (const m of modelsToTry) {
+    const endpoint = `${GEMINI_BASE_URL}/${m}:generateContent?key=${apiKey}`;
 
-  const payload = {
-    system_instruction: {
-      parts: [{ text: systemInstruction }],
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: fullPrompt }],
+    const payload = {
+      system_instruction: {
+        parts: [{ text: systemInstruction }],
       },
-    ],
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 1000,
-    },
-    safetySettings: [
-      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }, // Allowed for cybersecurity analysis
-    ],
-  };
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: fullPrompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+      },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+      ],
+    };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
 
-    clearTimeout(timer);
+      clearTimeout(timer);
 
-    if (res.status === 429) {
-      return lang === "km"
-        ? "⚠️ Gemini AI កំពុងមានសំណើច្រើនពេក (Rate Limit Exceeded)។ សូមព្យាយាមម្តងទៀតក្នុងពេលបន្តិចទៀត។"
-        : "⚠️ Gemini AI rate limit exceeded. Please try again in a few moments.";
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          return cleanTelegramMarkdown(text);
+        }
+      }
+    } catch {
+      clearTimeout(timer);
     }
-
-    if (!res.ok) {
-      return lang === "km"
-        ? `⚠️ Gemini AI ជួបបញ្ហាក្នុងការឆ្លើយតប (HTTP ${res.status})។`
-        : `⚠️ Gemini AI service error (HTTP ${res.status}).`;
-    }
-
-    const data = (await res.json()) as any;
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!text) {
-      return lang === "km"
-        ? "⚠️ Gemini AI មិនអាចបង្កើតចម្លើយសម្រាប់សំណួរនេះបានទេ។"
-        : "⚠️ Gemini AI was unable to generate a response for this query.";
-    }
-
-    return text.trim();
-  } catch (err: any) {
-    clearTimeout(timer);
-    if (err.name === "AbortError") {
-      return lang === "km"
-        ? "⏳ Gemini AI ឆ្លើយតបយឺតពេល (Request Timeout)។ សូមសាកល្បងម្តងទៀត។"
-        : "⏳ Gemini AI request timed out. Please try again.";
-    }
-    return lang === "km"
-      ? "⚠️ មិនអាចតភ្ជាប់ទៅកាន់ Gemini AI បានទេនៅពេលនេះ។"
-      : "⚠️ Unable to connect to Gemini AI at this time.";
   }
+
+  return lang === "km"
+    ? "⚠️ Gemini AI កំពុងមានសំណើច្រើនពេកនៅពេលនេះ។ សូមព្យាយាមសួរម្តងទៀតក្នុងពេលបន្តិចទៀត។"
+    : "⚠️ Gemini AI is currently experiencing high demand. Please try again in a few moments.";
+}
+
+/**
+ * Explains suspicious messages and malicious/phishing links with Google Gemini AI.
+ */
+export async function analyzePhishingWithGemini(
+  apiKey: string,
+  messageText: string,
+  heuristics: {
+    verdict: string;
+    riskScore: number;
+    urls: string[];
+    redFlags: string[];
+    tactics: string[];
+    recommendations: string[];
+    vtMalicious?: number;
+    vtTotal?: number;
+  },
+  options?: {
+    lang?: string;
+    model?: string;
+    timeoutMs?: number;
+  }
+): Promise<string> {
+  const modelsToTry = [
+    "gemini-3-flash-preview",
+    options?.model,
+    "gemini-3.5-flash",
+  ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) as string[];
+
+  const lang = options?.lang || "km";
+  const timeoutMs = options?.timeoutMs || 15000;
+  const systemInstruction = lang === "km" ? SYSTEM_INSTRUCTION_KM : SYSTEM_INSTRUCTION_EN;
+
+  const prompt = `[Phishing & Malicious Link Context]
+Target Message/URL:
+${messageText.slice(0, 800)}
+
+Extracted URLs: ${heuristics.urls.length > 0 ? heuristics.urls.join(", ") : "None"}
+Calculated Verdict: ${heuristics.verdict}
+Risk Score: ${heuristics.riskScore}/100
+Red Flags: ${heuristics.redFlags.length > 0 ? heuristics.redFlags.join("; ") : "None"}
+Tactics Detected: ${heuristics.tactics.length > 0 ? heuristics.tactics.join("; ") : "None"}
+VirusTotal Threat Intel: ${heuristics.vtMalicious !== undefined && heuristics.vtMalicious > 0 ? `${heuristics.vtMalicious}/${heuristics.vtTotal} security vendors flagged as malicious` : "No external threat alerts"}
+
+Instructions:
+Provide a concise, practical cybersecurity assessment for the user:
+1. Explain the danger in straightforward terms (e.g., brand spoofing, fake giveaway, credential theft).
+2. Detail the exact trick being used.
+3. Provide 2-3 immediate protective actions.
+Language requirement: Answer strictly in ${lang === "km" ? "Khmer (ភាសាខ្មែរ) without any Thai characters" : "English"}.`;
+
+  for (const m of modelsToTry) {
+    const endpoint = `${GEMINI_BASE_URL}/${m}:generateContent?key=${apiKey}`;
+
+    const payload = {
+      system_instruction: {
+        parts: [{ text: systemInstruction }],
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+      },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+      ],
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          return cleanTelegramMarkdown(text);
+        }
+      }
+    } catch {
+      clearTimeout(timer);
+    }
+  }
+
+  return lang === "km"
+    ? "⚠️ មិនអាចទទួលបានការវិភាគលម្អិតពី Gemini AI បានទេនៅពេលនេះ។"
+    : "⚠️ Unable to generate detailed Gemini AI explanation at this time.";
 }

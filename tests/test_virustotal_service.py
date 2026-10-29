@@ -90,3 +90,26 @@ async def test_vt_caching():
         res2 = await vt.lookup_hash("cached_hash_123")
         assert res2.status == VTStatus.FOUND
         assert mock_get.call_count == 1  # Not called again
+
+
+@pytest.mark.asyncio
+async def test_vt_lookup_url_success():
+    vt = VirusTotalService(api_key="mock_key")
+    mock_payload = {
+        "data": {
+            "attributes": {
+                "last_analysis_stats": {"malicious": 4, "suspicious": 1, "undetected": 70, "harmless": 15}
+            }
+        }
+    }
+    mock_resp = httpx.Response(200, json=mock_payload, request=httpx.Request("GET", "https://example.com"))
+
+    with patch.object(httpx.AsyncClient, "get", AsyncMock(return_value=mock_resp)) as mock_get:
+        res = await vt.lookup_url("https://phishing-site.xyz/test")
+        assert res.status == VTStatus.FOUND
+        assert res.malicious == 4
+        assert res.suspicious == 1
+        assert res.positives == 5
+        assert res.total_engines == 90
+        assert mock_get.call_count == 1
+

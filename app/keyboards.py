@@ -13,20 +13,22 @@ def get_main_reply_keyboard(lang: str = "km") -> ReplyKeyboardMarkup:
     """Returns the persistent bottom reply keyboard menu for mobile and desktop."""
     if lang == "km":
         keyboard = [
-            [KeyboardButton("🔍 ស្កេនឯកសារ"), KeyboardButton("💬 សួរ AI Security")],
-            [KeyboardButton("⚙️ ស្ថានភាពម៉ាស៊ីន"), KeyboardButton("🔬 Ghidra Decompiler")],
-            [KeyboardButton("📋 ប្រវត្តិស្កេន"), KeyboardButton("🌐 ផ្លាស់ប្តូរភាសា")],
-            [KeyboardButton("🔐 គោលការណ៍ឯកជនភាព"), KeyboardButton("📚 ការណែនាំ & ជំនួយ")],
+            [KeyboardButton("🔍 ស្កេនឯកសារ"), KeyboardButton("🔗 វិភាគ Link & សារ")],
+            [KeyboardButton("💬 សួរ AI Security"), KeyboardButton("⚙️ ស្ថានភាពម៉ាស៊ីន")],
+            [KeyboardButton("🔬 Ghidra Decompiler"), KeyboardButton("📋 ប្រវត្តិស្កេន")],
+            [KeyboardButton("🌐 ផ្លាស់ប្តូរភាសា"), KeyboardButton("📚 ការណែនាំ & ជំនួយ")],
+            [KeyboardButton("🔐 គោលការណ៍ឯកជនភាព")],
         ]
-        placeholder = "សូមជ្រើសរើសមុខងារ ឬផ្ញើឯកសារស្កេន..."
+        placeholder = "សូមជ្រើសរើសមុខងារ ឬផ្ញើឯកសារ/Link ដើម្បីស្កេន..."
     else:
         keyboard = [
-            [KeyboardButton("🔍 Scan File"), KeyboardButton("💬 Ask AI Security")],
-            [KeyboardButton("⚙️ System Status"), KeyboardButton("🔬 Ghidra Decompiler")],
-            [KeyboardButton("📋 Scan History"), KeyboardButton("🌐 Switch Language")],
-            [KeyboardButton("🔐 Privacy Policy"), KeyboardButton("📚 Help & Guide")],
+            [KeyboardButton("🔍 Scan File"), KeyboardButton("🔗 វិភាគ Link & សារ")],
+            [KeyboardButton("💬 Ask AI Security"), KeyboardButton("⚙️ System Status")],
+            [KeyboardButton("🔬 Ghidra Decompiler"), KeyboardButton("📋 Scan History")],
+            [KeyboardButton("🌐 Switch Language"), KeyboardButton("📚 Help & Guide")],
+            [KeyboardButton("🔐 Privacy Policy")],
         ]
-        placeholder = "Select an option or send a file to scan..."
+        placeholder = "Select an option or send file/link to scan..."
 
     return ReplyKeyboardMarkup(
         keyboard=keyboard,

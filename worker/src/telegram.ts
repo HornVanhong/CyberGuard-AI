@@ -141,26 +141,28 @@ export function getReplyKeyboard(lang: string = "km"): ReplyKeyboardMarkup {
   if (lang === "km") {
     return {
       keyboard: [
-        [{ text: "🔍 ស្កេនឯកសារ" }, { text: "💬 សួរ AI Security" }],
-        [{ text: "⚙️ ស្ថានភាពម៉ាស៊ីន" }, { text: "🔬 Ghidra Decompiler" }],
-        [{ text: "📋 ប្រវត្តិស្កេន" }, { text: "🌐 ផ្លាស់ប្តូរភាសា" }],
-        [{ text: "🔐 គោលការណ៍ឯកជនភាព" }, { text: "📚 ការណែនាំ & ជំនួយ" }],
+        [{ text: "🔍 ស្កេនឯកសារ" }, { text: "🔗 វិភាគ Link & សារ" }],
+        [{ text: "💬 សួរ AI Security" }, { text: "⚙️ ស្ថានភាពម៉ាស៊ីន" }],
+        [{ text: "🔬 Ghidra Decompiler" }, { text: "📋 ប្រវត្តិស្កេន" }],
+        [{ text: "🌐 ផ្លាស់ប្តូរភាសា" }, { text: "📚 ការណែនាំ & ជំនួយ" }],
+        [{ text: "🔐 គោលការណ៍ឯកជនភាព" }],
       ],
       resize_keyboard: true,
       is_persistent: true,
-      input_field_placeholder: "សូមជ្រើសរើសមុខងារ ឬផ្ញើឯកសារស្កេន...",
+      input_field_placeholder: "សូមជ្រើសរើសមុខងារ ឬផ្ញើឯកសារ/Link ដើម្បីស្កេន...",
     };
   }
 
   return {
     keyboard: [
-      [{ text: "🔍 Scan File" }, { text: "💬 Ask AI Security" }],
-      [{ text: "⚙️ System Status" }, { text: "🔬 Ghidra Decompiler" }],
-      [{ text: "📋 Scan History" }, { text: "🌐 Switch Language" }],
-      [{ text: "🔐 Privacy Policy" }, { text: "📚 Help & Guide" }],
+      [{ text: "🔍 Scan File" }, { text: "🔗 វិភាគ Link & សារ" }],
+      [{ text: "💬 Ask AI Security" }, { text: "⚙️ System Status" }],
+      [{ text: "🔬 Ghidra Decompiler" }, { text: "📋 Scan History" }],
+      [{ text: "🌐 Switch Language" }, { text: "📚 Help & Guide" }],
+      [{ text: "🔐 Privacy Policy" }],
     ],
     resize_keyboard: true,
     is_persistent: true,
-    input_field_placeholder: "Select an option or send a file to scan...",
+    input_field_placeholder: "Select an option or send file/link to scan...",
   };
 }

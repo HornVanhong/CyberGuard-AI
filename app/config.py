@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     # AI Security Explanations (Google Gemini using official google-genai SDK)
     GEMINI_ENABLED: bool = Field(default=False, description="Enable Gemini AI integration")
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key")
-    GEMINI_MODEL: str = Field(default="gemini-3.5-flash-lite", description="Gemini model identifier")
+    GEMINI_MODEL: str = Field(default="gemini-3-flash-preview", description="Gemini model identifier")
     GEMINI_TIMEOUT: float = Field(default=25.0, description="Gemini API timeout in seconds")
     GEMINI_MAX_OUTPUT_TOKENS: int = Field(
         default=1500, description="Maximum output tokens for Gemini responses"

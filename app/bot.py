@@ -140,6 +140,27 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("report", partial(report_handler, repo=repo)))
     app.add_handler(CommandHandler("cancel", cancel_handler))
 
+    async def _link_cmd(update, context):
+        from app.handlers.menu_router import _process_link_analysis
+        from telegram.constants import ParseMode
+        from app.i18n import get_user_lang
+        user_id = update.effective_user.id
+        lang = get_user_lang(user_id, default=settings.DEFAULT_LANGUAGE)
+        args_text = " ".join(context.args) if context.args else ""
+        if not args_text:
+            context.user_data["waiting_for_link"] = True
+            prompt = (
+                "🔗 *CyberGuard AI — វិភាគ Link & សារបន្លំ (Phishing/Scam)*\n\n"
+                "សូមផ្ញើ ឬ Forward តំណភ្ជាប់ (Link/URL) ឬសារដែលគួរឱ្យសង្ស័យមកកាន់ទីនេះ៖"
+                if lang == "km"
+                else "🔗 *CyberGuard AI — Link & Phishing Analyzer*\n\nPlease send or forward any suspicious link or message to this chat:"
+            )
+            await update.effective_message.reply_text(prompt, parse_mode=ParseMode.MARKDOWN)
+            return
+        await _process_link_analysis(update.effective_message, user_id, args_text, vt, ai, lang)
+
+    app.add_handler(CommandHandler(["check", "link", "url"], _link_cmd))
+
     # Register Text Message & Bottom Reply Keyboard Router
     app.add_handler(
         MessageHandler(

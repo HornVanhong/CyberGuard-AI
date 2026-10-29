@@ -1,0 +1,27 @@
+{
+  "name": "cyberguard-video-promo",
+  "version": "1.0.0",
+  "description": "CyberGuard AI - Cinematic TikTok & Landscape Promotional Video",
+  "private": true,
+  "scripts": {
+    "dev": "remotion studio",
+    "preview": "remotion preview",
+    "render": "remotion render CyberGuardVertical out/cyberguard-tiktok.mp4",
+    "render:landscape": "remotion render CyberGuardLandscape out/cyberguard-landscape.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "@remotion/tailwind-v4": "4.0.539",
+    "@remotion/zod-types": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "tailwindcss": "4.0.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "typescript": "5.9.3"
+  }
+}
