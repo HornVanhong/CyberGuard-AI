@@ -89,7 +89,7 @@ def build_application() -> Application:
 
     async def _post_init(application: Application) -> None:
         """Configures official Telegram Bot Menu commands visible to users."""
-        commands = [
+        en_commands = [
             BotCommand("start", "🚀 Start bot and show main menu"),
             BotCommand("scan", "🔍 Scan a file for malware & threats"),
             BotCommand("status", "⚙️ Check scanner engines & AI health"),
@@ -102,9 +102,27 @@ def build_application() -> Application:
             BotCommand("privacy", "🔐 Review zero-retention privacy policy"),
             BotCommand("help", "📚 User guide and risk levels explained"),
         ]
+
+        km_commands = [
+            BotCommand("start", "🚀 ចាប់ផ្តើម Bot និងបើកផ្ទាំងមឺនុយមេ"),
+            BotCommand("scan", "🔍 ស្កេនឯកសារស្វែងរកមេរោគ"),
+            BotCommand("status", "⚙️ ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន និង AI"),
+            BotCommand("ask", "💬 សួរសំណួរសន្តិសុខសាយប័រជាមួយ AI"),
+            BotCommand("explain", "💡 ពន្យល់លម្អិតពីលទ្ធផលស្កេនឯកសារ"),
+            BotCommand("ghidra", "🔬 វិភាគស៊ីជម្រៅ និង Decompile (Ghidra)"),
+            BotCommand("report", "📊 ទាញយករបាយការណ៍ស្កេនពេញលេញ"),
+            BotCommand("history", "📋 មើលប្រវត្តិឯកសារដែលបានស្កេន"),
+            BotCommand("cleardata", "🗑️ លុបប្រវត្តិ និងកំណត់ត្រាទាំងអស់"),
+            BotCommand("privacy", "🔐 គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព"),
+            BotCommand("help", "📚 ការណែនាំ និងរបៀបប្រើប្រាស់"),
+        ]
+
         try:
-            await application.bot.set_my_commands(commands)
-            logger.info("Registered %d Telegram bot commands", len(commands))
+            # Register default English commands
+            await application.bot.set_my_commands(en_commands)
+            # Register localized Khmer commands for Khmer users
+            await application.bot.set_my_commands(km_commands, language_code="km")
+            logger.info("Registered %d Telegram bot commands (English & Khmer)", len(en_commands))
         except Exception as e:
             logger.warning("Could not set bot commands: %s", e)
 
