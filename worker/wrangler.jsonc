@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "telegram-scan-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-10-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "MAX_FILE_SIZE_BYTES": "20971520",
+    "GEMINI_MODEL": "gemini-1.5-flash",
+    "DEFAULT_LANGUAGE": "km"
+  }
+}

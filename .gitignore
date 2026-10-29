@@ -36,3 +36,8 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Node.js & Cloudflare Worker
+node_modules/
+.wrangler/
+dist/
