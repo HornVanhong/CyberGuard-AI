@@ -299,11 +299,15 @@ async def test_lang_handler_switch_args():
 
     update, user, message = _create_mock_update(user_id=999)
     context = MagicMock()
+    context.bot.set_my_commands = AsyncMock()
     context.args = ["km"]
 
     await lang_handler(update, context)
     assert get_user_lang(999) == "km"
+    assert context.bot.set_my_commands.called
 
+    context.bot.set_my_commands.reset_mock()
     context.args = ["en"]
     await lang_handler(update, context)
     assert get_user_lang(999) == "en"
+    assert context.bot.set_my_commands.called

@@ -88,37 +88,12 @@ def build_application() -> Application:
         enabled=settings.is_gemini_enabled,
     )
 
+    from app.handlers.language import get_bot_commands
+
     async def _post_init(application: Application) -> None:
         """Configures official Telegram Bot Menu commands visible to users."""
-        en_commands = [
-            BotCommand("start", "🚀 Start bot and show main menu"),
-            BotCommand("scan", "🔍 Scan a file for malware & threats"),
-            BotCommand("status", "⚙️ Check scanner engines & AI health"),
-            BotCommand("ask", "💬 Ask cybersecurity AI assistant"),
-            BotCommand("explain", "💡 Explain scan findings with Gemini AI"),
-            BotCommand("ghidra", "🔬 Decompile binary with NSA Ghidra SRE"),
-            BotCommand("report", "📊 View or download full scan report"),
-            BotCommand("history", "📋 View your recent scan history"),
-            BotCommand("cleardata", "🗑️ Delete your scan history records"),
-            BotCommand("privacy", "🔐 Review zero-retention privacy policy"),
-            BotCommand("lang", "🌐 Switch language (English / ខ្មែរ)"),
-            BotCommand("help", "📚 User guide and risk levels explained"),
-        ]
-
-        km_commands = [
-            BotCommand("start", "🚀 ចាប់ផ្តើម Bot និងបើកផ្ទាំងមឺនុយមេ"),
-            BotCommand("scan", "🔍 ស្កេនឯកសារស្វែងរកមេរោគ"),
-            BotCommand("status", "⚙️ ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន និង AI"),
-            BotCommand("ask", "💬 សួរសំណួរសន្តិសុខសាយប័រជាមួយ AI"),
-            BotCommand("explain", "💡 ពន្យល់លម្អិតពីលទ្ធផលស្កេនឯកសារ"),
-            BotCommand("ghidra", "🔬 វិភាគស៊ីជម្រៅ និង Decompile (Ghidra)"),
-            BotCommand("report", "📊 ទាញយករបាយការណ៍ស្កេនពេញលេញ"),
-            BotCommand("history", "📋 មើលប្រវត្តិឯកសារដែលបានស្កេន"),
-            BotCommand("cleardata", "🗑️ លុបប្រវត្តិ និងកំណត់ត្រាទាំងអស់"),
-            BotCommand("privacy", "🔐 គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព"),
-            BotCommand("lang", "🌐 ផ្លាស់ប្តូរភាសា (English / ខ្មែរ)"),
-            BotCommand("help", "📚 ការណែនាំ និងរបៀបប្រើប្រាស់"),
-        ]
+        en_commands = get_bot_commands("en")
+        km_commands = get_bot_commands("km")
 
         try:
             # Register default English commands

@@ -52,13 +52,15 @@ async def callback_router(
     # 1. Language switcher
     if data.startswith("lang:"):
         selected_lang = data.split(":", 1)[1]
-        set_user_lang(user_id, selected_lang)
+        chat_id = update.effective_chat.id if update.effective_chat else user_id
+        from app.handlers.language import apply_user_language
+        await apply_user_language(context.bot, user_id=user_id, chat_id=chat_id, lang=selected_lang)
         await query.answer("Language updated / បានផ្លាស់ប្តូរភាសា!")
         lang_name = "English 🇬🇧" if selected_lang == "en" else "ភាសាខ្មែរ 🇰🇭"
         confirm_text = (
-            f"✅ Language set to *{lang_name}*."
+            f"✅ Language set to *{lang_name}*.\n_Telegram menu commands updated!_"
             if selected_lang == "en"
-            else f"✅ បានប្តូរភាសាទៅជា *{lang_name}* រួចរាល់។"
+            else f"✅ បានប្តូរភាសាទៅជា *{lang_name}* រួចរាល់។\n_Menu ពាក្យបញ្ជាលើ Telegram ត្រូវបានប្តូរទៅជាភាសាខ្មែរដូចគ្នា!_"
         )
         await query.message.reply_text(confirm_text, parse_mode=ParseMode.MARKDOWN)
         return
