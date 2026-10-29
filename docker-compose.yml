@@ -45,7 +45,7 @@ services:
     security_opt:
       - no-new-privileges:true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=100m
+      - /tmp:rw,nosuid,size=300m
       - /app/temp_uploads:rw,noexec,nosuid,size=200m,uid=10001,gid=10001,mode=0775
     volumes:
       - cyberguard_data:/app/data
@@ -55,7 +55,7 @@ services:
       resources:
         limits:
           cpus: "1.5"
-          memory: 1000M
+          memory: 2500M
 
 networks:
   cyberguard-net:

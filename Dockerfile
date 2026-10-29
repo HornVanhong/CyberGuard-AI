@@ -16,11 +16,22 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # Final runtime image
 FROM python:3.12-slim
 
-# Install runtime utilities (exiftool, libmagic)
+# Install runtime utilities (exiftool, libmagic, OpenJDK 25 JDK for Ghidra SRE, unzip)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libimage-exiftool-perl \
     libmagic1 \
+    openjdk-25-jdk-headless \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Ghidra SRE & Decompiler
+COPY tools/ghidra.zip /tmp/ghidra.zip
+RUN mkdir -p /opt && \
+    unzip -q /tmp/ghidra.zip -d /opt && \
+    mv /opt/ghidra_* /opt/ghidra && \
+    rm -f /tmp/ghidra.zip && \
+    chmod -R 755 /opt/ghidra && \
+    ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless
 
 # Create dedicated non-privileged user and group
 RUN groupadd -g 10001 cyberguard && \
@@ -48,7 +59,11 @@ USER cyberguard:cyberguard
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64 \
+    GHIDRA_PATH=/usr/local/bin/analyzeHeadless \
+    JAVA_TOOL_OPTIONS="-Duser.home=/tmp" \
+    HOME=/tmp
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "from app.config import settings; print('CyberGuard config ok')" || exit 1

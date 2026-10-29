@@ -108,10 +108,15 @@ class GhidraAdapter(BaseScannerAdapter):
                 str(report_file),
             ]
 
+            env = os.environ.copy()
+            env["JAVA_TOOL_OPTIONS"] = "-Duser.home=/tmp"
+            env["HOME"] = "/tmp"
+
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
 
             try:
@@ -147,7 +152,7 @@ class GhidraAdapter(BaseScannerAdapter):
                 data = json.load(f)
 
             findings: List[Finding] = []
-            dangerous_apis = data.get("dangerous_apis", [])
+            dangerous_apis = data.get("detected_apis") or data.get("dangerous_apis", [])
             compiler = data.get("compiler", "Unknown")
             func_count = data.get("function_count", 0)
             decompiled_code = data.get("decompiled_code", "")
@@ -200,11 +205,16 @@ class GhidraAdapter(BaseScannerAdapter):
                 confidence=0.90,
                 execution_time_ms=elapsed_ms,
             )
-            # Attach decompiled snippet for forensic inspection
+            # Attach decompiled snippet and full binary metadata for forensic inspection
             result.metadata = {
+                "program_name": data.get("program_name", ""),
+                "language_id": data.get("language_id", ""),
+                "compiler": compiler,
+                "image_base": data.get("image_base", ""),
+                "function_count": func_count,
+                "detected_apis": dangerous_apis,
                 "entry_function": data.get("entry_function", ""),
                 "decompiled_code": decompiled_code,
-                "function_count": func_count,
             }
             return result
 

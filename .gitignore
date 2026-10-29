@@ -23,6 +23,8 @@ data/*
 *.db
 *.db-wal
 *.db-shm
+*.zip
+ghidra/
 
 # Testing & Coverage
 .pytest_cache/

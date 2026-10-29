@@ -58,13 +58,16 @@ public class AnalyzeBinary extends GhidraScript {
                 json.append("      \"address\": \"").append(s.getAddress().toString()).append("\",\n");
                 json.append("      \"callers\": [");
 
-                ReferenceIterator refIter = s.getReferences();
+                Reference[] refs = s.getReferences();
                 List<String> callers = new ArrayList<>();
-                while (refIter.hasNext()) {
-                    Reference ref = refIter.next();
-                    Function caller = currentProgram.getFunctionManager().getFunctionContaining(ref.getFromAddress());
-                    if (caller != null && !callers.contains(caller.getName())) {
-                        callers.add(caller.getName());
+                if (refs != null) {
+                    for (Reference ref : refs) {
+                        if (ref != null && ref.getFromAddress() != null) {
+                            Function caller = currentProgram.getFunctionManager().getFunctionContaining(ref.getFromAddress());
+                            if (caller != null && !callers.contains(caller.getName())) {
+                                callers.add(caller.getName());
+                            }
+                        }
                     }
                 }
 
