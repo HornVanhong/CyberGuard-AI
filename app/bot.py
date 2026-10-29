@@ -31,6 +31,7 @@ from app.handlers.status import status_handler
 from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
 from app.handlers.explain import explain_handler
 from app.handlers.ghidra import ghidra_handler
+from app.handlers.language import lang_handler
 from app.handlers.report import report_handler
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
@@ -100,6 +101,7 @@ def build_application() -> Application:
             BotCommand("history", "📋 View your recent scan history"),
             BotCommand("cleardata", "🗑️ Delete your scan history records"),
             BotCommand("privacy", "🔐 Review zero-retention privacy policy"),
+            BotCommand("lang", "🌐 Switch language (English / ខ្មែរ)"),
             BotCommand("help", "📚 User guide and risk levels explained"),
         ]
 
@@ -114,6 +116,7 @@ def build_application() -> Application:
             BotCommand("history", "📋 មើលប្រវត្តិឯកសារដែលបានស្កេន"),
             BotCommand("cleardata", "🗑️ លុបប្រវត្តិ និងកំណត់ត្រាទាំងអស់"),
             BotCommand("privacy", "🔐 គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព"),
+            BotCommand("lang", "🌐 ផ្លាស់ប្តូរភាសា (English / ខ្មែរ)"),
             BotCommand("help", "📚 ការណែនាំ និងរបៀបប្រើប្រាស់"),
         ]
 
@@ -154,6 +157,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("history", partial(history_handler, repo=repo)))
     app.add_handler(CommandHandler("cleardata", partial(cleardata_handler, repo=repo)))
     app.add_handler(CommandHandler("privacy", privacy_handler))
+    app.add_handler(CommandHandler(["lang", "language"], lang_handler))
     app.add_handler(CommandHandler("ask", partial(ask_handler, ai=ai, repo=repo)))
     app.add_handler(CommandHandler("explain", partial(explain_handler, ai=ai, repo=repo)))
     app.add_handler(CommandHandler("ghidra", partial(ghidra_handler, repo=repo)))

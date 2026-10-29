@@ -13,6 +13,7 @@ from app.handlers.history import history_handler, cleardata_handler
 from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
 from app.handlers.explain import explain_handler
 from app.handlers.ghidra import ghidra_handler
+from app.handlers.language import lang_handler
 from app.handlers.report import report_handler, download_report_callback
 from app.services.ai_service import AIService, AIExplanationResult
 
@@ -275,3 +276,34 @@ async def test_ghidra_handler_file_expired(test_db_path, monkeypatch):
     reply = message.reply_text.call_args[0][0]
     assert "File Cache Expired" in reply
     assert "malware_sample.exe" in reply
+
+
+@pytest.mark.asyncio
+async def test_lang_handler_menu_display():
+    update, user, message = _create_mock_update(user_id=888)
+    context = MagicMock()
+    context.args = []
+
+    await lang_handler(update, context)
+    assert message.reply_text.called
+    kwargs = message.reply_text.call_args.kwargs
+    reply = kwargs.get("text") or message.reply_text.call_args[0][0]
+    assert "Language Selection" in reply
+    assert "ជ្រើសរើសភាសា" in reply
+    assert kwargs.get("reply_markup") is not None
+
+
+@pytest.mark.asyncio
+async def test_lang_handler_switch_args():
+    from app.i18n import get_user_lang
+
+    update, user, message = _create_mock_update(user_id=999)
+    context = MagicMock()
+    context.args = ["km"]
+
+    await lang_handler(update, context)
+    assert get_user_lang(999) == "km"
+
+    context.args = ["en"]
+    await lang_handler(update, context)
+    assert get_user_lang(999) == "en"

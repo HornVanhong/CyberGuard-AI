@@ -55,7 +55,12 @@ async def callback_router(
         set_user_lang(user_id, selected_lang)
         await query.answer("Language updated / បានផ្លាស់ប្តូរភាសា!")
         lang_name = "English 🇬🇧" if selected_lang == "en" else "ភាសាខ្មែរ 🇰🇭"
-        await query.message.reply_text(f"✅ Language set to *{lang_name}*.", parse_mode=ParseMode.MARKDOWN)
+        confirm_text = (
+            f"✅ Language set to *{lang_name}*."
+            if selected_lang == "en"
+            else f"✅ បានប្តូរភាសាទៅជា *{lang_name}* រួចរាល់។"
+        )
+        await query.message.reply_text(confirm_text, parse_mode=ParseMode.MARKDOWN)
         return
 
     # 2. Command triggers
