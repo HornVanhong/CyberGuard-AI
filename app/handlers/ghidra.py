@@ -51,19 +51,39 @@ async def ghidra_handler(
 
     # 2. Identify target scan
     scan_id = None
+    record = None
+
     if context.args:
         scan_id = context.args[0].strip()
+        record = repo.get_scan(scan_id=scan_id, user_id=user.id)
+        if not record:
+            msg = (
+                f"⚠️ *Scan Record Not Found*\n\n"
+                f"No scan record found matching ID `{scan_id}` for your account.\n"
+                f"Please check your `/history` or provide a valid scan ID."
+            )
+            if update.callback_query:
+                await update.callback_query.answer()
+                await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+            else:
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+            return
     else:
-        latest = repo.get_latest_user_scan(user.id)
-        if latest:
-            scan_id = latest.scan_id
+        record = repo.get_latest_user_scan(user_id=user.id)
+        if record:
+            scan_id = record.scan_id
 
-    if not scan_id:
+    if not record or not scan_id:
         msg = (
-            "🔬 *Ghidra Decompiler & Forensic SRE*\n\n"
-            "Please specify a scan ID to decompile:\n"
-            "`/ghidra [scan_id]`\n\n"
-            "Or upload an executable file (`.exe`, `.dll`, `.elf`) first."
+            "🔬 *Ghidra Headless SRE & Decompiler Engine*\n\n"
+            "🟢 *Status:* Ready (NSA Ghidra 12.2)\n\n"
+            "To decompile an executable file (`.exe`, `.dll`, `.elf`):\n"
+            "1. Simply **upload or forward the executable file** to this chat.\n"
+            "2. Or specify a recent scan ID: `/ghidra [scan_id]`\n\n"
+            "⚡ *Capabilities:*\n"
+            "• Pseudo-C function decompilation\n"
+            "• High-risk system API cross-references (Injection, Process Hollowing, C2)\n"
+            "• Binary architecture and function counts"
         )
         if update.callback_query:
             await update.callback_query.answer()
@@ -72,13 +92,8 @@ async def ghidra_handler(
             await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
         return
 
-    record = repo.get_scan(scan_id)
-    if not record or record.user_id != user.id:
-        await update.message.reply_text(t("explain_not_found"))
-        return
-
     # Check sandbox file existence
-    target_file = Path(settings.TEMP_DIR) / scan_id / record.file_name
+    target_file = Path(settings.TEMP_DIR) / scan_id / record.filename_sanitized
     if not target_file.exists():
         # Fallback search inside temp directory
         matches = list((Path(settings.TEMP_DIR) / scan_id).glob("*"))
@@ -87,10 +102,12 @@ async def ghidra_handler(
 
     if not target_file.exists():
         msg = (
-            f"⚠️ *File Sandbox Expired for Scan #{scan_id[:8]}*\n\n"
+            f"🔬 *Ghidra Headless SRE & Decompiler*\n\n"
+            f"⚠️ *File Cache Expired for Scan #{scan_id[:8]}*\n"
+            f"• File Name: `{record.filename_sanitized}`\n\n"
             "In accordance with our zero-retention security policy, original binaries "
-            "are deleted immediately upon scan completion.\n\n"
-            "To decompile with Ghidra, please re-upload the file."
+            "are deleted from the temporary sandbox after scanning.\n\n"
+            "To decompile with Ghidra, please **re-upload the executable file** to this chat."
         )
         if update.callback_query:
             await update.callback_query.answer()
@@ -127,7 +144,7 @@ async def ghidra_handler(
 
     report_text = (
         f"🔬 *Ghidra Reverse Engineering Report*\n"
-        f"📁 *Target:* `{record.file_name}`\n"
+        f"📁 *Target:* `{record.filename_sanitized}`\n"
         f"🔢 *Functions Discovered:* `{func_count}`\n"
         f"⏱️ *Analysis Time:* `{result.execution_time_ms:.1f}ms`\n\n"
         f"📊 *Findings:*\n{findings_text if findings_text else '• No high-risk API xrefs detected.'}"

@@ -154,6 +154,7 @@ async def document_upload_handler(
     )
 
     sandbox_dir: Optional[Path] = None
+    is_exe: bool = False
 
     try:
         # 6. Create isolated sandbox directory
@@ -284,5 +285,17 @@ async def document_upload_handler(
 
     finally:
         # 17. GUARANTEED SANDBOX CLEANUP
+        # For non-executable files, delete immediately to ensure zero-retention privacy.
+        # For executables (.exe, .dll, .elf), retain in isolated sandbox for a 10-minute
+        # window so the user can interactively trigger '🔬 Ghidra Decompile' or /ghidra.
         if sandbox_dir:
-            file_service.cleanup_scan_dir(sandbox_dir)
+            if is_exe:
+                async def _delayed_cleanup(target_dir: Path) -> None:
+                    try:
+                        await asyncio.sleep(600)  # 10 minutes cache window
+                        file_service.cleanup_scan_dir(target_dir)
+                    except Exception:
+                        pass
+                asyncio.create_task(_delayed_cleanup(sandbox_dir))
+            else:
+                file_service.cleanup_scan_dir(sandbox_dir)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 from functools import partial
 
+from telegram import BotCommand
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -86,8 +87,34 @@ def build_application() -> Application:
         enabled=settings.is_gemini_enabled,
     )
 
+    async def _post_init(application: Application) -> None:
+        """Configures official Telegram Bot Menu commands visible to users."""
+        commands = [
+            BotCommand("start", "🚀 Start bot and show main menu"),
+            BotCommand("scan", "🔍 Scan a file for malware & threats"),
+            BotCommand("status", "⚙️ Check scanner engines & AI health"),
+            BotCommand("ask", "💬 Ask cybersecurity AI assistant"),
+            BotCommand("explain", "💡 Explain scan findings with Gemini AI"),
+            BotCommand("ghidra", "🔬 Decompile binary with NSA Ghidra SRE"),
+            BotCommand("report", "📊 View or download full scan report"),
+            BotCommand("history", "📋 View your recent scan history"),
+            BotCommand("cleardata", "🗑️ Delete your scan history records"),
+            BotCommand("privacy", "🔐 Review zero-retention privacy policy"),
+            BotCommand("help", "📚 User guide and risk levels explained"),
+        ]
+        try:
+            await application.bot.set_my_commands(commands)
+            logger.info("Registered %d Telegram bot commands", len(commands))
+        except Exception as e:
+            logger.warning("Could not set bot commands: %s", e)
+
     # Build Application
-    app = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(settings.TELEGRAM_BOT_TOKEN)
+        .post_init(_post_init)
+        .build()
+    )
 
     # Register Command Handlers
     app.add_handler(CommandHandler("start", start_handler))

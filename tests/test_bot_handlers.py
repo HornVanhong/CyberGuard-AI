@@ -12,6 +12,7 @@ from app.handlers.privacy import privacy_handler
 from app.handlers.history import history_handler, cleardata_handler
 from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handler
 from app.handlers.explain import explain_handler
+from app.handlers.ghidra import ghidra_handler
 from app.handlers.report import report_handler, download_report_callback
 from app.services.ai_service import AIService, AIExplanationResult
 
@@ -228,3 +229,49 @@ async def test_report_handler_and_download(test_db_path):
     assert query.message.reply_document.called
     doc_args = query.message.reply_document.call_args.kwargs
     assert "cyberguard_report_" in doc_args["document"].name
+
+
+@pytest.mark.asyncio
+async def test_ghidra_handler_no_scans(test_db_path, monkeypatch):
+    from app.scanners.ghidra_analyzer import GhidraAdapter
+    monkeypatch.setattr(GhidraAdapter, "is_available", lambda self: True)
+
+    repo = ScanRepository(db_path=test_db_path)
+    update, user, message = _create_mock_update(user_id=777)
+    context = MagicMock()
+    context.args = []
+
+    await ghidra_handler(update, context, repo=repo)
+    assert message.reply_text.called
+    reply = message.reply_text.call_args[0][0]
+    assert "Ghidra" in reply
+    assert "upload or forward the executable file" in reply
+
+
+@pytest.mark.asyncio
+async def test_ghidra_handler_file_expired(test_db_path, monkeypatch):
+    from app.scanners.ghidra_analyzer import GhidraAdapter
+    monkeypatch.setattr(GhidraAdapter, "is_available", lambda self: True)
+
+    repo = ScanRepository(db_path=test_db_path)
+    repo.save_scan(
+        ScanRecord.create(
+            scan_id="ghidra-expired-1",
+            user_id=777,
+            filename_sanitized="malware_sample.exe",
+            file_size=10240,
+            sha256="ee"*32,
+            verdict="SUSPICIOUS",
+            risk_level="HIGH",
+        )
+    )
+
+    update, user, message = _create_mock_update(user_id=777)
+    context = MagicMock()
+    context.args = []
+
+    await ghidra_handler(update, context, repo=repo)
+    assert message.reply_text.called
+    reply = message.reply_text.call_args[0][0]
+    assert "File Cache Expired" in reply
+    assert "malware_sample.exe" in reply
