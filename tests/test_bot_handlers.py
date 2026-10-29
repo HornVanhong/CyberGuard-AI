@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from telegram import Update, User, Message, Chat
+from telegram import Update, User, Message, Chat, ReplyKeyboardMarkup
 
 from app.database.repository import ScanRepository
 from app.database.models import ScanRecord
@@ -14,6 +14,7 @@ from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handl
 from app.handlers.explain import explain_handler
 from app.handlers.ghidra import ghidra_handler
 from app.handlers.language import lang_handler
+from app.handlers.menu_router import text_message_router
 from app.handlers.report import report_handler, download_report_callback
 from app.services.ai_service import AIService, AIExplanationResult
 
@@ -43,6 +44,7 @@ async def test_start_handler():
     assert message.reply_text.called
     args, kwargs = message.reply_text.call_args
     assert "CyberGuard AI" in kwargs.get("text", "")
+    assert isinstance(kwargs.get("reply_markup"), ReplyKeyboardMarkup)
 
 
 @pytest.mark.asyncio
@@ -311,3 +313,33 @@ async def test_lang_handler_switch_args():
     await lang_handler(update, context)
     assert get_user_lang(999) == "en"
     assert context.bot.set_my_commands.called
+
+
+@pytest.mark.asyncio
+async def test_text_message_router_scan_button(test_db_path):
+    repo = ScanRepository(db_path=test_db_path)
+    update, user, message = _create_mock_update(user_id=111)
+    message.text = "🔍 ស្កេនឯកសារ"
+    context = MagicMock()
+
+    await text_message_router(
+        update, context,
+        clamav=MagicMock(), yara=MagicMock(), vt=MagicMock(), ai=MagicMock(), repo=repo,
+    )
+    assert message.reply_text.called
+
+
+@pytest.mark.asyncio
+async def test_text_message_router_ask_button(test_db_path):
+    repo = ScanRepository(db_path=test_db_path)
+    update, user, message = _create_mock_update(user_id=222)
+    message.text = "💬 Ask AI Security"
+    context = MagicMock()
+    context.user_data = {}
+
+    await text_message_router(
+        update, context,
+        clamav=MagicMock(), yara=MagicMock(), vt=MagicMock(), ai=MagicMock(), repo=repo,
+    )
+    assert context.user_data.get("waiting_for_ask") is True
+    assert message.reply_text.called

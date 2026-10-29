@@ -13,6 +13,7 @@ from telegram.ext import ContextTypes
 
 from app.config import settings
 from app.i18n import get_user_lang, set_user_lang, t
+from app.keyboards import get_main_reply_keyboard
 from app.security.validation import is_user_authorized
 from app.utils.logger import logger
 
@@ -81,6 +82,7 @@ async def lang_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.effective_message.reply_text(
                 "✅ Language switched to *English 🇬🇧*.\n_Telegram menu commands have been updated to English._",
                 parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_main_reply_keyboard(lang="en"),
             )
             return
         elif chosen in ("km", "khmer", "ខ្មែរ"):
@@ -88,6 +90,7 @@ async def lang_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.effective_message.reply_text(
                 "✅ បានប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់។\n_Menu ពាក្យបញ្ជាលើ Telegram ត្រូវបានប្តូរទៅជាភាសាខ្មែរដូចគ្នា។_",
                 parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_main_reply_keyboard(lang="km"),
             )
             return
 

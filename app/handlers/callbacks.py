@@ -54,6 +54,7 @@ async def callback_router(
         selected_lang = data.split(":", 1)[1]
         chat_id = update.effective_chat.id if update.effective_chat else user_id
         from app.handlers.language import apply_user_language
+        from app.keyboards import get_main_reply_keyboard
         await apply_user_language(context.bot, user_id=user_id, chat_id=chat_id, lang=selected_lang)
         await query.answer("Language updated / បានផ្លាស់ប្តូរភាសា!")
         lang_name = "English 🇬🇧" if selected_lang == "en" else "ភាសាខ្មែរ 🇰🇭"
@@ -62,7 +63,11 @@ async def callback_router(
             if selected_lang == "en"
             else f"✅ បានប្តូរភាសាទៅជា *{lang_name}* រួចរាល់។\n_Menu ពាក្យបញ្ជាលើ Telegram ត្រូវបានប្តូរទៅជាភាសាខ្មែរដូចគ្នា!_"
         )
-        await query.message.reply_text(confirm_text, parse_mode=ParseMode.MARKDOWN)
+        await query.message.reply_text(
+            confirm_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_main_reply_keyboard(lang=selected_lang),
+        )
         return
 
     # 2. Command triggers

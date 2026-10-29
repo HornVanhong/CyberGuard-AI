@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 
 from app.config import settings
 from app.i18n import t, set_user_lang, get_user_lang
+from app.keyboards import get_main_reply_keyboard
 from app.security.validation import is_user_authorized
 from app.utils.logger import logger
 
@@ -55,5 +56,5 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(
         text=text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=keyboard,
+        reply_markup=get_main_reply_keyboard(lang=lang),
     )

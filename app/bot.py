@@ -32,6 +32,7 @@ from app.handlers.ask import ask_handler, ask_text_message_handler, cancel_handl
 from app.handlers.explain import explain_handler
 from app.handlers.ghidra import ghidra_handler
 from app.handlers.language import lang_handler
+from app.handlers.menu_router import text_message_router
 from app.handlers.report import report_handler
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
@@ -139,11 +140,18 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("report", partial(report_handler, repo=repo)))
     app.add_handler(CommandHandler("cancel", cancel_handler))
 
-    # Register Interactive Q&A Text Message Handler
+    # Register Text Message & Bottom Reply Keyboard Router
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            partial(ask_text_message_handler, ai=ai, repo=repo),
+            partial(
+                text_message_router,
+                clamav=clamav,
+                yara=yara,
+                vt=vt,
+                ai=ai,
+                repo=repo,
+            ),
         )
     )
 
