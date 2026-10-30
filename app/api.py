@@ -14,6 +14,9 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
+import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, Dict
@@ -203,14 +206,30 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                     payload = json.loads(raw_body) if raw_body else {}
                     file_url = payload.get("file_url")
                     filename = payload.get("filename", "uploaded_file.bin")
+                    chat_id = payload.get("chat_id")
+                    status_msg_id = payload.get("status_msg_id")
+                    lang = payload.get("lang", "km")
+                    file_size = payload.get("file_size", 0)
 
                     if not file_url:
                         self._set_headers(400)
                         self.wfile.write(json.dumps({"error": "Missing 'file_url' in JSON body"}).encode())
                         return
 
+                    if chat_id and status_msg_id:
+                        # Asynchronous execution to completely prevent Cloudflare 60s idle timeout
+                        self._set_headers(200)
+                        self.wfile.write(json.dumps({"status": "accepted", "message": "Scan job running in background"}).encode())
+
+                        thread = threading.Thread(
+                            target=self._process_scan_background,
+                            args=(file_url, filename, chat_id, status_msg_id, lang, file_size),
+                            daemon=True,
+                        )
+                        thread.start()
+                        return
+
                     logger.info(f"Direct high-speed download initiated for '{filename}' from Telegram...")
-                    import requests
                     with requests.get(file_url, stream=True, timeout=90) as r:
                         r.raise_for_status()
                         file_bytes = r.content
@@ -251,6 +270,167 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                 self._set_headers(500)
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
             return
+
+    def _process_scan_background(
+        self,
+        file_url: str,
+        filename: str,
+        chat_id: int,
+        status_msg_id: int,
+        lang: str,
+        file_size: int,
+    ) -> None:
+        """Processes large file download, scan, and AI analysis in background, updating Telegram in real-time."""
+        token = settings.TELEGRAM_BOT_TOKEN
+        size_mb = f"{(file_size / (1024 * 1024)):.1f}" if file_size > 0 else ""
+        size_label = f" ({size_mb} MB)" if size_mb else ""
+
+        def render_bar(pct: int, length: int = 10) -> str:
+            clamped = max(0, min(100, pct))
+            filled = round((clamped / 100) * length)
+            return "▰" * filled + "▱" * (length - filled)
+
+        def edit_tg(text: str, reply_markup=None):
+            url = f"https://api.telegram.org/bot{token}/editMessageText"
+            body: Dict[str, Any] = {
+                "chat_id": chat_id,
+                "message_id": status_msg_id,
+                "text": text,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": True,
+            }
+            if reply_markup:
+                body["reply_markup"] = reply_markup
+            try:
+                r = requests.post(url, json=body, timeout=10)
+                if not r.ok:
+                    body.pop("parse_mode", None)
+                    requests.post(url, json=body, timeout=10)
+            except Exception:
+                pass
+
+        try:
+            logger.info(f"[BackgroundScan] Downloading '{filename}' for chat {chat_id}...")
+            chunks = []
+            downloaded = 0
+            last_edit = time.time()
+
+            with requests.get(file_url, stream=True, timeout=120) as r:
+                r.raise_for_status()
+                total_len = int(r.headers.get("content-length") or file_size or 0)
+                for chunk in r.iter_content(chunk_size=256 * 1024):
+                    if chunk:
+                        chunks.append(chunk)
+                        downloaded += len(chunk)
+                        now = time.time()
+                        if total_len > 0 and (now - last_edit >= 1.5):
+                            pct = min(int((downloaded / total_len) * 70), 70)
+                            cur_mb = f"{(downloaded / (1024 * 1024)):.1f}"
+                            tot_mb = f"{(total_len / (1024 * 1024)):.1f}"
+                            bar = render_bar(pct)
+                            msg = (
+                                f"⚡ *កំពុងទាញយកឯកសារ ({tot_mb} MB)*\n`{bar}` {pct}%\n({cur_mb} MB / {tot_mb} MB)\n\n📥 _ទាញយកផ្ទាល់ពី Telegram CDN..._"
+                                if lang == "km"
+                                else f"⚡ *Downloading file ({tot_mb} MB)*\n`{bar}` {pct}%\n({cur_mb} MB / {tot_mb} MB)\n\n📥 _Direct download from Telegram CDN..._"
+                            )
+                            edit_tg(msg)
+                            last_edit = now
+
+            file_bytes = b"".join(chunks)
+            logger.info(f"[BackgroundScan] Download complete: {len(file_bytes)} bytes. Running engines...")
+
+            p80 = (
+                f"🔍 *កំពុងវិភាគសុវត្ថិភាពឯកសារ (80%)*\n`{render_bar(80)}`\n\n🛡️ _ClamAV Antivirus, YARA Rules & SRE Engines..._"
+                if lang == "km"
+                else f"🔍 *Analyzing file security (80%)*\n`{render_bar(80)}`\n\n🛡️ _ClamAV Antivirus, YARA Rules & SRE Engines..._"
+            )
+            edit_tg(p80)
+
+            # Execute scan
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            scan_report = loop.run_until_complete(self._execute_scan(filename, file_bytes))
+            loop.close()
+
+            verdict = scan_report.get("verdict", "INCONCLUSIVE")
+            severity = scan_report.get("severity", "MEDIUM")
+            findings = scan_report.get("findings", ["Scan completed."])
+            icon = "🟢" if verdict == "CLEAN" else ("🔴" if verdict == "MALICIOUS" else "🟡")
+
+            logger.info(f"[BackgroundScan] Scan verdict for '{filename}': {verdict} ({severity})")
+
+            ai_explanation = ""
+            if settings.is_gemini_enabled:
+                p92 = (
+                    f"🤖 *កំពុងបូកសរុបលទ្ធផលជាមួយ AI (92%)*\n`{render_bar(92)}`\n\n🧠 _Google Gemini AI Security Assessment..._"
+                    if lang == "km"
+                    else f"🤖 *Generating AI Explanation (92%)*\n`{render_bar(92)}`\n\n🧠 _Google Gemini AI Security Assessment..._"
+                )
+                edit_tg(p92)
+
+                try:
+                    from app.services.ai_service import AIService
+                    ai_service = AIService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL, enabled=True)
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    prompt = (
+                        f"[File Scan Result]\nFile: {filename}\nVerdict: {verdict}\nSeverity: {severity}\n"
+                        f"Findings: {'; '.join(findings)}\n\n"
+                        f"Explain these results in {('Khmer' if lang == 'km' else 'English')} and give security advice."
+                    )
+                    ai_res = loop.run_until_complete(ai_service.ask(prompt, lang=lang))
+                    loop.close()
+                    if ai_res:
+                        ai_explanation = ai_res.answer
+                except Exception as e:
+                    logger.error(f"Error calling Gemini in background: {e}")
+
+            # Build final report
+            header = "🛡️ *CyberGuard AI — លទ្ធផលស្កេនឯកសារ*" if lang == "km" else "🛡️ *CyberGuard AI — File Scan Result*"
+            file_label = "📄 *ឯកសារ:*" if lang == "km" else "📄 *File:*"
+            v_label = "លទ្ធផល (Verdict):" if lang == "km" else "Verdict:"
+            s_label = "កម្រិតហានិភ័យ:" if lang == "km" else "Severity:"
+            f_label = "🔍 *ការរកឃើញ (Findings):*" if lang == "km" else "🔍 *Findings:*"
+            ai_label = "🤖 *ការវិភាគពី Gemini AI:*" if lang == "km" else "🤖 *Gemini AI Assessment:*"
+            footer = "🛡️ _CyberGuard AI Zero-Trust File Inspection_"
+
+            f_text = "\n".join(f"• {f}" for f in findings)
+            ai_sec = f"\n\n{ai_label}\n{ai_explanation}" if ai_explanation else ""
+
+            report_msg = (
+                f"{header}\n\n"
+                f"{file_label} `{filename}`{size_label}\n"
+                f"{icon} *${v_label}* *{verdict}*\n"
+                f"⚠️ *${s_label}* *{severity}*\n\n"
+                f"{f_label}\n"
+                f"{f_text}"
+                f"{ai_sec}\n\n"
+                f"{footer}"
+            )
+
+            reply_keyboard = {
+                "keyboard": [
+                    [{"text": "🔍 ស្កេនឯកសារ" if lang == "km" else "🔍 Scan File"}, {"text": "🔗 វិភាគ Link & សារ" if lang == "km" else "🔗 Inspect Link & Msg"}],
+                    [{"text": "💬 សួរ AI Security" if lang == "km" else "💬 Ask AI Security"}, {"text": "⚙️ ស្ថានភាពម៉ាស៊ីន" if lang == "km" else "⚙️ System Status"}],
+                    [{"text": "🔬 Ghidra Decompiler"}, {"text": "📋 ប្រវត្តិស្កេន" if lang == "km" else "📋 Scan History"}],
+                    [{"text": "🌐 ផ្លាស់ប្តូរភាសា" if lang == "km" else "🌐 Switch Language"}, {"text": "📚 ការណែនាំ & ជំនួយ" if lang == "km" else "📚 Help & Guide"}],
+                    [{"text": "🔐 គោលការណ៍ឯកជនភាព" if lang == "km" else "🔐 Privacy Policy"}],
+                ],
+                "resize_keyboard": True,
+                "is_persistent": True,
+            }
+
+            edit_tg(report_msg, reply_markup=reply_keyboard)
+            logger.info(f"[BackgroundScan] Completed successfully for '{filename}'.")
+
+        except Exception as e:
+            logger.error(f"[BackgroundScan] Failed: {e}", exc_info=True)
+            err_msg = (
+                f"❌ បរាជ័យក្នុងការស្កេនឯកសារ៖ {e}"
+                if lang == "km"
+                else f"❌ Failed to scan file: {e}"
+            )
+            edit_tg(err_msg)
 
     async def _collect_engine_status(self) -> Dict[str, Any]:
         """Gathers status across all 12 engines."""

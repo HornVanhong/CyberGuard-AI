@@ -677,8 +677,12 @@ async function scanFileWithBackend(fileBufferOrUrl, filename, env) {
       if (env.SCANNER_API_TOKEN) headers["Authorization"] = `Bearer ${env.SCANNER_API_TOKEN}`;
       
       let body;
-      if (typeof fileBufferOrUrl === "string") {
-        // Fast direct download from Telegram CDN via backend
+      if (typeof fileBufferOrUrl === "object" && fileBufferOrUrl.file_url) {
+        // Fast async scan payload with background progress tracking
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify(fileBufferOrUrl);
+      } else if (typeof fileBufferOrUrl === "string") {
+        // Direct download from Telegram CDN via backend
         headers["Content-Type"] = "application/json";
         body = JSON.stringify({ file_url: fileBufferOrUrl, filename });
       } else {
@@ -836,8 +840,21 @@ async function handleFileUpload(token, chatId, fileId, filename, env, lang, file
       await editTelegramMessage(token, chatId, statusMsgId, p40);
     }
 
-    // Attempt direct URL scan with local backend first (super fast direct download)
-    let scanReport = await scanFileWithBackend(directFileUrl, filename, env);
+    // Call backend with chat_id and statusMsgId for async background processing
+    const backendPayload = {
+      file_url: directFileUrl,
+      filename: filename,
+      chat_id: chatId,
+      status_msg_id: statusMsgId,
+      lang: lang,
+      file_size: actualSize,
+    };
+    let scanReport = await scanFileWithBackend(backendPayload, filename, env);
+    if (scanReport && scanReport.status === "accepted") {
+      // Background scan job successfully offloaded to backend!
+      // The backend streams the download and updates Telegram directly with live progress and final report.
+      return;
+    }
 
     // Fallback: If backend direct URL didn't work, Worker streams the download and sends buffer
     if (!scanReport) {
