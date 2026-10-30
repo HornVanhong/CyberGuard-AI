@@ -983,7 +983,6 @@ async function routeTelegramUpdate(update, env, ctx) {
   // 2. Handle Text & Commands
   const text = (message.text || "").trim();
   if (!text) return;
-  const lowerText = text.toLowerCase();
 
   // /start
   if (lowerText.startsWith("/start")) {
