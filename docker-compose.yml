@@ -59,6 +59,46 @@ services:
           cpus: "1.5"
           memory: 2500M
 
+  kali-analyzer:
+    build:
+      context: .
+      dockerfile: docker/kali-analyzer/Dockerfile
+      args:
+        INSTALL_GHIDRA: "true"
+    image: cyberguard-kali-analyzer:latest
+    container_name: cyberguard-kali-analyzer
+    restart: unless-stopped
+    user: "10002:10002"
+    environment:
+      - TMPDIR=/tmp
+      - HOME=/home/analyzer
+    privileged: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,size=300m
+      - /tmp/analysis:rw,noexec,nosuid,size=500m,uid=10002,gid=10002,mode=0770
+      - /home/analyzer:rw,nosuid,size=100m,uid=10002,gid=10002,mode=0770
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3000M
+          pids: 150
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    volumes:
+      - ./docker/kali-analyzer/samples:/samples:ro
+      - ./docker/kali-analyzer/reports:/reports:rw
+      - ./docker/kali-analyzer/logs:/logs:rw
+      - ./rules:/opt/rules/yara:ro
+    networks:
+      - cyberguard-net
+
 networks:
   cyberguard-net:
     driver: bridge

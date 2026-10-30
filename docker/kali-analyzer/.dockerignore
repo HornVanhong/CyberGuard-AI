@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+data/*.db
+temp_uploads/*
+!tools/ghidra.zip
+*.log
+.DS_Store
+Thumbs.db

@@ -240,6 +240,30 @@ cp .env.example .env
 Docker Compose deploys the complete architecture in isolated containers:
 - **`cyberguard-bot`**: Runs as a non-privileged user (`cyberguard`, UID 10001) with a **read-only root filesystem**, all Linux capabilities dropped (`cap_drop: ALL`), `no-new-privileges: true`, resource limits, and an isolated `tmpfs` sandbox.
 - **`clamav`**: Official ClamAV daemon with automated `freshclam` signature definition updates on an internal Docker bridge network.
+- **`kali-analyzer`**: Dedicated Kali Linux malware analysis sandbox container containing all 14+ security tools, running with `cap_drop: ALL`, `no-new-privileges`, read-only sample mounts, and non-root execution.
+
+---
+
+### Option 3: Dedicated Kali Linux Malware Analysis Engine (FOSS & SRE Sandbox)
+
+For advanced static analysis, binary reverse engineering, and multi-engine threat hunting, CyberGuard AI features a dedicated Kali Linux rolling container.
+
+See full documentation in [docker/kali-analyzer/README.md](docker/kali-analyzer/README.md).
+
+#### Start Kali Analysis Sandbox:
+```bash
+docker compose -f docker/kali-analyzer/docker-compose.yml up -d
+```
+
+#### Run Security Tool Verification:
+```bash
+docker compose -f docker/kali-analyzer/docker-compose.yml exec kali-analyzer check_tools.sh
+```
+
+#### Scan a Sample via Kali Container CLI:
+```bash
+docker compose -f docker/kali-analyzer/docker-compose.yml exec kali-analyzer python3 /usr/local/bin/kali_scanner.py /samples/sample.bin --pretty
+```
 
 1. **Configure environment:**
    ```bash

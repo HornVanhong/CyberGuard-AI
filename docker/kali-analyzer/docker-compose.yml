@@ -1,0 +1,61 @@
+services:
+  kali-analyzer:
+    build:
+      context: ../..
+      dockerfile: docker/kali-analyzer/Dockerfile
+      args:
+        INSTALL_GHIDRA: "true"
+    image: cyberguard-kali-analyzer:latest
+    container_name: cyberguard-kali-analyzer
+    restart: unless-stopped
+
+    # Security: Run as non-root unprivileged analysis user
+    user: "10002:10002"
+    environment:
+      - TMPDIR=/tmp
+      - HOME=/home/analyzer
+
+    # Security: Drop all capabilities, prevent privilege escalation
+    privileged: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    # Security: Read-only container rootfs with ephemeral tmpfs
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,size=300m
+      - /tmp/analysis:rw,noexec,nosuid,size=500m,uid=10002,gid=10002,mode=0770
+      - /home/analyzer:rw,nosuid,size=100m,uid=10002,gid=10002,mode=0770
+
+    # Resource Hardening (prevent zip bombs and resource exhaustion)
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3000M
+          pids: 150
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+    # Dedicated Directory Structure:
+    # Samples mounted READ-ONLY (:ro) to prevent modification or execution tampering
+    volumes:
+      - ./samples:/samples:ro
+      - ./reports:/reports:rw
+      - ./logs:/logs:rw
+      - ../../rules:/opt/rules/yara:ro
+
+    # Network Isolation: Sandbox network with no external ingress
+    networks:
+      - analysis-sandbox-net
+
+    # Default command starts idle daemon waiting for scan jobs
+    command: ["tail", "-f", "/dev/null"]
+
+networks:
+  analysis-sandbox-net:
+    driver: bridge
+    internal: false
