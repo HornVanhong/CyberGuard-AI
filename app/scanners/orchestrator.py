@@ -101,21 +101,31 @@ class ScannerOrchestrator:
         file_path: Path,
         clean_filename: str,
         timeout: float = 30.0,
+        file_bytes: Optional[bytes] = None,
     ) -> OrchestrationResult:
         """Executes applicable multi-engine scan on target file."""
-        # 1. Identify format and check extension masquerading
-        file_analysis = await asyncio.to_thread(
-            FileAnalyzer.analyze, file_path, clean_filename
-        )
+        # 1. Identify format and check extension masquerading (in-memory if bytes provided)
+        if file_bytes is not None:
+            file_analysis = FileAnalyzer.analyze_bytes(file_bytes, clean_filename)
+        else:
+            file_analysis = await asyncio.to_thread(
+                FileAnalyzer.analyze, file_path, clean_filename
+            )
 
         ext = Path(clean_filename).suffix.lower()
         adapter_results: List[ScannerResult] = []
 
-        # 2. Universal Scanners: ClamAV, YARA, ExifTool
-        clamav_res, yara_res = await asyncio.gather(
-            self.clamav.scan_file(file_path),
-            self.yara.scan_file(file_path),
-        )
+        # 2. Universal Scanners: ClamAV, YARA (supports in-memory scanning)
+        if file_bytes is not None:
+            clamav_res, yara_res = await asyncio.gather(
+                self.clamav.scan_bytes(file_bytes, clean_filename),
+                self.yara.scan_bytes(file_bytes, clean_filename),
+            )
+        else:
+            clamav_res, yara_res = await asyncio.gather(
+                self.clamav.scan_file(file_path),
+                self.yara.scan_file(file_path),
+            )
         adapter_results.append(self._convert_clamav_result(clamav_res))
         adapter_results.append(self._convert_yara_result(yara_res))
 

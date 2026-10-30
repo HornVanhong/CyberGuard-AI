@@ -64,18 +64,22 @@ class OfficeAnalyzer:
     @classmethod
     def analyze_file(cls, file_path: Path | str) -> List[OfficeFinding]:
         """Safely inspects modern OpenXML (ZIP) or legacy OLE documents."""
-        p = Path(file_path)
-        if not p.is_file():
+        try:
+            p = Path(file_path)
+            if not p.is_file():
+                return []
+
+            findings: List[OfficeFinding] = []
+
+            if zipfile.is_zipfile(p):
+                findings.extend(cls._analyze_openxml(p))
+            else:
+                findings.extend(cls._analyze_legacy_ole(p))
+
+            return findings
+        except (OSError, Exception) as e:
+            logger.debug("OfficeAnalyzer skipped (%s): %s", file_path, e)
             return []
-
-        findings: List[OfficeFinding] = []
-
-        if zipfile.is_zipfile(p):
-            findings.extend(cls._analyze_openxml(p))
-        else:
-            findings.extend(cls._analyze_legacy_ole(p))
-
-        return findings
 
     @classmethod
     def _analyze_openxml(cls, file_path: Path) -> List[OfficeFinding]:

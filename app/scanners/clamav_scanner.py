@@ -102,19 +102,12 @@ class ClamAVScanner:
             logger.debug("ClamAV version check failed: %s", e)
             return None
 
-    async def scan_file(self, file_path: Path | str) -> ClamAVResult:
-        """Streams file to clamd using zINSTREAM command and parses result."""
+    async def scan_bytes(self, file_bytes: bytes, filename: str = "stream") -> ClamAVResult:
+        """Streams byte payload to clamd using zINSTREAM command directly from memory."""
         if not self.enabled:
             return ClamAVResult(
                 status=ClamAVStatus.UNAVAILABLE,
                 error_message="ClamAV is disabled in configuration.",
-            )
-
-        p = Path(file_path)
-        if not p.is_file():
-            return ClamAVResult(
-                status=ClamAVStatus.FAILED,
-                error_message=f"File not found: {file_path}",
             )
 
         try:
@@ -134,13 +127,12 @@ class ClamAVScanner:
             writer.write(b"zINSTREAM\0")
             await writer.drain()
 
-            # Stream chunks with 4-byte network-endian length prefix
-            with open(p, "rb") as f:
-                while chunk := f.read(self.CHUNK_SIZE):
-                    chunk_len = len(chunk)
-                    header = struct.pack(">I", chunk_len)
-                    writer.write(header + chunk)
-                    await writer.drain()
+            # Stream chunks from memory with 4-byte network-endian length prefix
+            for offset in range(0, len(file_bytes), self.CHUNK_SIZE):
+                chunk = file_bytes[offset : offset + self.CHUNK_SIZE]
+                header = struct.pack(">I", len(chunk))
+                writer.write(header + chunk)
+                await writer.drain()
 
             # Zero-length chunk indicates EOF
             writer.write(struct.pack(">I", 0))
@@ -149,18 +141,19 @@ class ClamAVScanner:
             # Read clamd reply
             response_bytes = await asyncio.wait_for(reader.read(512), timeout=self.timeout)
             raw_response = response_bytes.decode("utf-8", errors="replace").strip("\x00\r\n ")
-            logger.info("ClamAV scan completed: %s", raw_response)
+            safe_fn = filename.encode("ascii", errors="backslashreplace").decode("ascii")
+            logger.info("ClamAV scan completed for '%s': %s", safe_fn, raw_response)
 
             return self._parse_clamd_response(raw_response)
 
         except asyncio.TimeoutError:
-            logger.error("ClamAV scan timed out for %s", p.name)
+            logger.error("ClamAV scan timed out for %s", filename)
             return ClamAVResult(
                 status=ClamAVStatus.FAILED,
                 error_message="Scan timed out.",
             )
         except Exception as e:
-            logger.error("ClamAV scan error: %s", e)
+            logger.error("ClamAV scan error for %s: %s", filename, e)
             return ClamAVResult(
                 status=ClamAVStatus.FAILED,
                 error_message=str(e),
@@ -171,6 +164,26 @@ class ClamAVScanner:
                 await writer.wait_closed()
             except Exception:
                 pass
+
+    async def scan_file(self, file_path: Path | str) -> ClamAVResult:
+        """Reads file and streams to clamd."""
+        p = Path(file_path)
+        if not p.is_file():
+            return ClamAVResult(
+                status=ClamAVStatus.FAILED,
+                error_message=f"File not found: {file_path}",
+            )
+
+        try:
+            with open(p, "rb") as f:
+                content = f.read()
+            return await self.scan_bytes(content, filename=p.name)
+        except OSError as e:
+            logger.warning("Could not read %s for ClamAV scan: %s", p, e)
+            return ClamAVResult(
+                status=ClamAVStatus.FAILED,
+                error_message=f"Could not open file ({e})",
+            )
 
     @staticmethod
     def _parse_clamd_response(raw_response: str) -> ClamAVResult:

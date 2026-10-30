@@ -150,39 +150,26 @@ class FileAnalyzer:
     """Identifies file formats from byte signatures and detects extension spoofing."""
 
     @classmethod
-    def analyze(cls, file_path: Path | str, original_filename: Optional[str] = None) -> FileTypeAnalysis:
-        p = Path(file_path)
-        if not p.is_file():
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        name = original_filename or p.name
+    def analyze_bytes(cls, file_bytes: bytes, original_filename: Optional[str] = None) -> FileTypeAnalysis:
+        """Identifies file format directly from in-memory bytes without requiring filesystem access."""
+        name = original_filename or "unknown.bin"
         declared_ext = Path(name).suffix.lower()
-
-        # Read first 512 bytes for header signature matching
-        with open(p, "rb") as f:
-            header = f.read(512)
+        header = file_bytes[:512]
 
         detected_mime = "application/octet-stream"
         detected_name = "Binary Data"
         category = FileCategory.UNKNOWN
 
-        # 1. python-magic / puremagic detection
-        if _MAGIC_AVAILABLE:
+        # 1. puremagic detection on in-memory bytes
+        if _PUREMAGIC_AVAILABLE:
             try:
-                detected_mime = magic.from_file(str(p.resolve()), mime=True) or detected_mime
-                detected_name = magic.from_file(str(p.resolve())) or detected_name
-            except Exception as e:
-                logger.debug("python-magic detection exception: %s", e)
-
-        if _PUREMAGIC_AVAILABLE and (detected_mime == "application/octet-stream" or not _MAGIC_AVAILABLE):
-            try:
-                matches = puremagic.magic_file(str(p.resolve()))
+                matches = puremagic.magic_string(file_bytes)
                 if matches:
                     primary = matches[0]
                     detected_mime = primary.mime_type or detected_mime
                     detected_name = primary.name or detected_name
             except Exception as e:
-                logger.debug("puremagic detection exception: %s", e)
+                logger.debug("puremagic bytes detection exception: %s", e)
 
         # 2. Check explicit signature table for precision
         for sig, mime, type_name, cat in MAGIC_SIGNATURES:
@@ -244,7 +231,6 @@ class FileAnalyzer:
             details = f"HIGH: Script payload disguised with non-executable extension '{declared_ext}'."
 
         elif expected_category != FileCategory.UNKNOWN and category != FileCategory.UNKNOWN and expected_category != category:
-            # General mismatch
             is_mismatch = True
             mismatch_severity = "medium"
             details = f"Extension '{declared_ext}' ({expected_category.value}) does not match detected content '{detected_name}' ({category.value})."
@@ -258,6 +244,28 @@ class FileAnalyzer:
             mismatch_severity=mismatch_severity,
             details=details,
         )
+
+    @classmethod
+    def analyze(cls, file_path: Path | str, original_filename: Optional[str] = None) -> FileTypeAnalysis:
+        p = Path(file_path)
+        name = original_filename or p.name
+
+        try:
+            with open(p, "rb") as f:
+                content = f.read()
+            return cls.analyze_bytes(content, name)
+        except OSError as e:
+            logger.warning("Could not read disk file %s (%s). Attempting safe fallback analysis.", p, e)
+            declared_ext = Path(name).suffix.lower()
+            return FileTypeAnalysis(
+                declared_extension=declared_ext,
+                detected_mime="application/octet-stream",
+                detected_type_name="Host-Locked Binary",
+                category=FileCategory.UNKNOWN,
+                is_mismatch=False,
+                mismatch_severity="none",
+                details=f"File was locked or quarantined by host endpoint protection ({e}).",
+            )
 
     @staticmethod
     def _is_plain_text(bytes_prefix: bytes) -> bool:

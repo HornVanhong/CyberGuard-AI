@@ -56,18 +56,25 @@ class ArchiveAnalyzer:
     @classmethod
     def analyze_file(cls, file_path: Path | str) -> List[ArchiveFinding]:
         """Inspects archive format and members safely."""
-        p = Path(file_path)
-        if not p.is_file():
+        try:
+            p = Path(file_path)
+            if not p.is_file():
+                return []
+
+            findings: List[ArchiveFinding] = []
+
+            if zipfile.is_zipfile(p):
+                findings.extend(cls._analyze_zip(p))
+            elif tarfile.is_tarfile(p):
+                findings.extend(cls._analyze_tar(p))
+
+            return findings
+        except OSError as e:
+            logger.debug("ArchiveAnalyzer file access skipped (%s): %s", file_path, e)
             return []
-
-        findings: List[ArchiveFinding] = []
-
-        if zipfile.is_zipfile(p):
-            findings.extend(cls._analyze_zip(p))
-        elif tarfile.is_tarfile(p):
-            findings.extend(cls._analyze_tar(p))
-
-        return findings
+        except Exception as e:
+            logger.warning("ArchiveAnalyzer unexpected error on %s: %s", file_path, e)
+            return []
 
     @classmethod
     def _analyze_zip(cls, zip_path: Path) -> List[ArchiveFinding]:

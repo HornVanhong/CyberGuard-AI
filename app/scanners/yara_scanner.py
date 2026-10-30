@@ -117,8 +117,8 @@ class YaraScanner:
             self._rules_loaded_count = 0
             return False
 
-    async def scan_file(self, file_path: Path | str) -> YaraResult:
-        """Asynchronously evaluates loaded YARA rules against a file."""
+    async def scan_bytes(self, file_bytes: bytes, filename: str = "memory") -> YaraResult:
+        """Asynchronously evaluates loaded YARA rules directly against in-memory bytes."""
         if not self.is_available:
             return YaraResult(
                 status=YaraStatus.UNAVAILABLE,
@@ -126,7 +126,6 @@ class YaraScanner:
             )
 
         if self._compiled_rules is None:
-            # Attempt compilation on demand
             async with self._compile_lock:
                 if self._compiled_rules is None:
                     success = await asyncio.to_thread(self.load_rules)
@@ -136,7 +135,74 @@ class YaraScanner:
                             error_message="No valid YARA rules compiled.",
                         )
 
+        try:
+            matches_raw = await asyncio.to_thread(
+                self._compiled_rules.match,
+                data=file_bytes,
+                timeout=int(self.timeout),
+            )
+
+            matches: List[YaraMatch] = []
+            for m in matches_raw:
+                snippets = []
+                for s in getattr(m, "strings", []):
+                    try:
+                        identifier = s[1]
+                        val = s[2][:40].decode("latin-1", errors="replace")
+                        snippets.append(f"{identifier}:{val}")
+                    except Exception:
+                        pass
+
+                matches.append(
+                    YaraMatch(
+                        rule=m.rule,
+                        namespace=m.namespace,
+                        tags=list(m.tags),
+                        meta=dict(m.meta),
+                        strings_matched=snippets[:5],
+                    )
+                )
+
+            status = YaraStatus.MATCHES_FOUND if matches else YaraStatus.CLEAN
+            return YaraResult(
+                status=status,
+                matches=matches,
+                rules_loaded_count=self._rules_loaded_count,
+            )
+        except yara.TimeoutError:
+            safe_fn = filename.encode("ascii", errors="backslashreplace").decode("ascii")
+            logger.error("YARA scan timed out for %s", safe_fn)
+            return YaraResult(
+                status=YaraStatus.FAILED,
+                error_message="YARA scan timed out.",
+                rules_loaded_count=self._rules_loaded_count,
+            )
+        except Exception as e:
+            safe_fn = filename.encode("ascii", errors="backslashreplace").decode("ascii")
+            logger.error("YARA scan error for %s: %s", safe_fn, e)
+            return YaraResult(
+                status=YaraStatus.FAILED,
+                error_message=str(e),
+                rules_loaded_count=self._rules_loaded_count,
+            )
+
+    async def scan_file(self, file_path: Path | str) -> YaraResult:
+        """Asynchronously evaluates loaded YARA rules against a file."""
+        if not self.is_available:
+            return YaraResult(
+                status=YaraStatus.UNAVAILABLE,
+                error_message="YARA scanner is not available on this host.",
+            )
+
         p = Path(file_path)
+        # Attempt to read in-memory first to avoid native C path issues or OS locks
+        try:
+            with open(p, "rb") as f:
+                data = f.read()
+            return await self.scan_bytes(data, filename=p.name)
+        except OSError:
+            pass
+
         if not p.is_file():
             return YaraResult(
                 status=YaraStatus.FAILED,
