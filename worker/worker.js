@@ -358,7 +358,7 @@ function getReplyKeyboard(lang = "km") {
 
   return {
     keyboard: [
-      [{ text: "🔍 Scan File" }, { text: "🔗 វិភាគ Link & សារ" }],
+      [{ text: "🔍 Scan File" }, { text: "🔗 Inspect Link & Msg" }],
       [{ text: "💬 Ask AI Security" }, { text: "⚙️ System Status" }],
       [{ text: "🔬 Ghidra Decompiler" }, { text: "📋 Scan History" }],
       [{ text: "🌐 Switch Language" }, { text: "📚 Help & Guide" }],
@@ -371,6 +371,19 @@ function getReplyKeyboard(lang = "km") {
 }
 
 // ================= Telegram API =================
+
+async function answerCallbackQuery(token, callbackQueryId, text) {
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text || "",
+      }),
+    });
+  } catch {}
+}
 
 async function sendTelegramMessage(token, payload) {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -863,15 +876,80 @@ async function handleLinkAnalysis(token, chatId, targetText, env, lang) {
   });
 }
 
+// In-memory user language preference store
+const USER_LANGUAGES = new Map();
+
 // ================= Router =================
 
 async function routeTelegramUpdate(update, env, ctx) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+
+  // 1. Handle Inline Keyboard Callbacks (e.g., Language Switch Buttons)
+  if (update.callback_query) {
+    const cb = update.callback_query;
+    const chatId = cb.message?.chat?.id;
+    const data = cb.data || "";
+
+    if (data.startsWith("set_lang:") && chatId) {
+      const newLang = data.replace("set_lang:", "").trim().toLowerCase();
+      USER_LANGUAGES.set(chatId, newLang);
+
+      await answerCallbackQuery(token, cb.id, newLang === "km" ? "ភាសាខ្មែរ 🇰🇭" : "English 🇬🇧");
+
+      const confirmMsg =
+        newLang === "km"
+          ? "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nMenu និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។"
+          : "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.";
+
+      await sendTelegramMessage(token, {
+        chat_id: chatId,
+        text: confirmMsg,
+        parse_mode: "Markdown",
+        reply_markup: getReplyKeyboard(newLang),
+      });
+      return;
+    }
+    return;
+  }
+
   const message = update.message;
   if (!message || !message.chat) return;
 
   const chatId = message.chat.id;
-  const token = env.TELEGRAM_BOT_TOKEN;
-  const lang = (env.DEFAULT_LANGUAGE || "km").toLowerCase();
+  const rawText = message.text || message.caption || "";
+  const lowerText = rawText.toLowerCase().trim();
+
+  // Auto-detect language preference from button clicks or explicit words
+  if (
+    lowerText.includes("switch language") ||
+    lowerText.includes("scan file") ||
+    lowerText.includes("ask ai security") ||
+    lowerText.includes("system status") ||
+    lowerText.includes("scan history") ||
+    lowerText.includes("help & guide") ||
+    lowerText.includes("privacy policy") ||
+    lowerText === "english" ||
+    lowerText === "en"
+  ) {
+    USER_LANGUAGES.set(chatId, "en");
+  } else if (
+    lowerText.includes("ផ្លាស់ប្តូរភាសា") ||
+    lowerText.includes("ស្កេនឯកសារ") ||
+    lowerText.includes("វិភាគ link") ||
+    lowerText.includes("សួរ ai security") ||
+    lowerText.includes("ស្ថានភាពម៉ាស៊ីន") ||
+    lowerText.includes("ប្រវត្តិស្កេន") ||
+    lowerText.includes("ការណែនាំ & ជំនួយ") ||
+    lowerText.includes("គោលការណ៍ឯកជនភាព") ||
+    lowerText === "ខ្មែរ" ||
+    lowerText === "ភាសាខ្មែរ" ||
+    lowerText === "km" ||
+    lowerText === "khmer"
+  ) {
+    USER_LANGUAGES.set(chatId, "km");
+  }
+
+  const lang = USER_LANGUAGES.get(chatId) || (env.DEFAULT_LANGUAGE || "km").toLowerCase();
 
   // 1. Handle File Uploads
   if (message.document || (message.photo && message.photo.length > 0)) {
@@ -1061,12 +1139,49 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
   }
 
   // /lang or Language button
-  if (lowerText.startsWith("/lang") || lowerText.includes("ផ្លាស់ប្តូរភាសា") || lowerText.includes("language")) {
+  if (lowerText.startsWith("/lang") || lowerText.includes("ផ្លាស់ប្តូរភាសា") || lowerText.includes("switch language")) {
+    const parts = rawText.trim().split(/\s+/);
+    if (parts.length > 1) {
+      const arg = parts[1].toLowerCase();
+      if (["en", "english", "eng"].includes(arg)) {
+        USER_LANGUAGES.set(chatId, "en");
+        await sendTelegramMessage(token, {
+          chat_id: chatId,
+          text: "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.",
+          parse_mode: "Markdown",
+          reply_markup: getReplyKeyboard("en"),
+        });
+        return;
+      } else if (["km", "khmer", "ខ្មែរ"].includes(arg)) {
+        USER_LANGUAGES.set(chatId, "km");
+        await sendTelegramMessage(token, {
+          chat_id: chatId,
+          text: "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nMenu និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។",
+          parse_mode: "Markdown",
+          reply_markup: getReplyKeyboard("km"),
+        });
+        return;
+      }
+    }
+
+    const currentLang = USER_LANGUAGES.get(chatId) || lang;
+    const langMsg =
+      currentLang === "km"
+        ? `🌐 *ជ្រើសរើសភាសា / Language Selection*\n\nភាសាបច្ចុប្បន្ន៖ *ភាសាខ្មែរ 🇰🇭*\nសូមចុចប៊ូតុងខាងក្រោមដើម្បីជ្រើសរើសភាសាដែលអ្នកចង់ប្រើប្រាស់៖`
+        : `🌐 *Language Selection / ជ្រើសរើសភាសា*\n\nCurrent Language: *English 🇬🇧*\nPlease select your preferred language below:`;
+
     await sendTelegramMessage(token, {
       chat_id: chatId,
-      text: `🌐 *ជ្រើសរើសភាសា / Language Selection*\n\nភាសាបច្ចុប្បន្ន៖ *ភាសាខ្មែរ 🇰🇭*\nប្រព័ន្ធគាំទ្រភាសាខ្មែរ និងភាសាអង់គ្លេសពេញលេញ។`,
+      text: langMsg,
       parse_mode: "Markdown",
-      reply_markup: getReplyKeyboard(lang),
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🇰🇭 ភាសាខ្មែរ (Khmer)", callback_data: "set_lang:km" },
+            { text: "🇬🇧 English", callback_data: "set_lang:en" },
+          ],
+        ],
+      },
     });
     return;
   }

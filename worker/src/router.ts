@@ -8,26 +8,92 @@ import { extractUrls, analyzeMessageHeuristics } from "./security";
 import {
   sendTelegramMessage,
   sendChatAction,
+  answerCallbackQuery,
   getReplyKeyboard,
   getTelegramFile,
   downloadTelegramFile,
 } from "./telegram";
 import { Env, TelegramUpdate } from "./types";
 
+// In-memory user language preference store
+const USER_LANGUAGES = new Map<number, string>();
+
 /**
- * Main router handling Telegram updates (messages, commands, files).
+ * Main router handling Telegram updates (messages, commands, files, callbacks).
  */
 export async function routeTelegramUpdate(
   update: TelegramUpdate,
   env: Env,
   ctx?: ExecutionContext
 ): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+
+  // 1. Handle Inline Keyboard Callbacks (e.g., Language Switch Buttons)
+  if (update.callback_query) {
+    const cb = update.callback_query;
+    const chatId = cb.message?.chat?.id;
+    const data = cb.data || "";
+
+    if (data.startsWith("set_lang:") && chatId) {
+      const newLang = data.replace("set_lang:", "").trim().toLowerCase();
+      USER_LANGUAGES.set(chatId, newLang);
+
+      await answerCallbackQuery(token, cb.id, newLang === "km" ? "ភាសាខ្មែរ 🇰🇭" : "English 🇬🇧");
+
+      const confirmMsg =
+        newLang === "km"
+          ? "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nប៊ូតុង និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។"
+          : "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.";
+
+      await sendTelegramMessage(token, {
+        chat_id: chatId,
+        text: confirmMsg,
+        parse_mode: "Markdown",
+        reply_markup: getReplyKeyboard(newLang),
+      });
+      return;
+    }
+    return;
+  }
+
   const message = update.message;
   if (!message || !message.chat) return;
 
   const chatId = message.chat.id;
-  const token = env.TELEGRAM_BOT_TOKEN;
-  const lang = (env.DEFAULT_LANGUAGE || "km").toLowerCase();
+  const rawText = message.text || message.caption || "";
+  const lowerText = rawText.toLowerCase().trim();
+
+  // Auto-detect language preference from button clicks or explicit words
+  if (
+    lowerText.includes("switch language") ||
+    lowerText.includes("scan file") ||
+    lowerText.includes("ask ai security") ||
+    lowerText.includes("system status") ||
+    lowerText.includes("scan history") ||
+    lowerText.includes("help & guide") ||
+    lowerText.includes("privacy policy") ||
+    lowerText === "english" ||
+    lowerText === "en"
+  ) {
+    USER_LANGUAGES.set(chatId, "en");
+  } else if (
+    lowerText.includes("ផ្លាស់ប្តូរភាសា") ||
+    lowerText.includes("ស្កេនឯកសារ") ||
+    lowerText.includes("វិភាគ link") ||
+    lowerText.includes("សួរ ai security") ||
+    lowerText.includes("ស្ថានភាពម៉ាស៊ីន") ||
+    lowerText.includes("ប្រវត្តិស្កេន") ||
+    lowerText.includes("ការណែនាំ & ជំនួយ") ||
+    lowerText.includes("គោលការណ៍ឯកជនភាព") ||
+    lowerText === "ខ្មែរ" ||
+    lowerText === "ភាសាខ្មែរ" ||
+    lowerText === "km" ||
+    lowerText === "khmer"
+  ) {
+    USER_LANGUAGES.set(chatId, "km");
+  }
+
+  const lang = USER_LANGUAGES.get(chatId) || (env.DEFAULT_LANGUAGE || "km").toLowerCase();
 
   // 1. Handle File Uploads (Documents or Photos)
   if (message.document || (message.photo && message.photo.length > 0)) {
@@ -64,8 +130,6 @@ export async function routeTelegramUpdate(
   // 2. Handle Text Messages & Commands
   const text = (message.text || "").trim();
   if (!text) return;
-
-  const lowerText = text.toLowerCase();
 
   // /start
   if (lowerText.startsWith("/start")) {
@@ -289,10 +353,35 @@ Under our strict Zero-Retention Privacy Policy, scans on Cloudflare Workers oper
 
   // /lang or "🌐 ផ្លាស់ប្តូរភាសា"
   if (lowerText.startsWith("/lang") || lowerText.includes("ផ្លាស់ប្តូរភាសា") || lowerText.includes("switch language")) {
+    const parts = rawText.trim().split(/\s+/);
+    if (parts.length > 1) {
+      const arg = parts[1].toLowerCase();
+      if (["en", "english", "eng"].includes(arg)) {
+        USER_LANGUAGES.set(chatId, "en");
+        await sendTelegramMessage(token, {
+          chat_id: chatId,
+          text: "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.",
+          parse_mode: "Markdown",
+          reply_markup: getReplyKeyboard("en"),
+        });
+        return;
+      } else if (["km", "khmer", "ខ្មែរ"].includes(arg)) {
+        USER_LANGUAGES.set(chatId, "km");
+        await sendTelegramMessage(token, {
+          chat_id: chatId,
+          text: "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nMenu និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។",
+          parse_mode: "Markdown",
+          reply_markup: getReplyKeyboard("km"),
+        });
+        return;
+      }
+    }
+
+    const currentLang = USER_LANGUAGES.get(chatId) || lang;
     const langMsg =
-      lang === "km"
-        ? `🌐 *ជ្រើសរើសភាសា / Language Selection*\n\nភាសាបច្ចុប្បន្ន៖ *ភាសាខ្មែរ 🇰🇭*\nសូមជ្រើសរើសភាសាដែលអ្នកចង់ប្រើប្រាស់៖`
-        : `🌐 *Language Selection*\n\nCurrent Language: *English 🇬🇧*\nPlease select your preferred language:`;
+      currentLang === "km"
+        ? `🌐 *ជ្រើសរើសភាសា / Language Selection*\n\nភាសាបច្ចុប្បន្ន៖ *ភាសាខ្មែរ 🇰🇭*\nសូមចុចប៊ូតុងខាងក្រោមដើម្បីជ្រើសរើសភាសាដែលអ្នកចង់ប្រើប្រាស់៖`
+        : `🌐 *Language Selection / ជ្រើសរើសភាសា*\n\nCurrent Language: *English 🇬🇧*\nPlease select your preferred language below:`;
 
     await sendTelegramMessage(token, {
       chat_id: chatId,
@@ -300,8 +389,10 @@ Under our strict Zero-Retention Privacy Policy, scans on Cloudflare Workers oper
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "English 🇬🇧", callback_data: "set_lang:en" }],
-          [{ text: "ភាសាខ្មែរ 🇰🇭", callback_data: "set_lang:km" }],
+          [
+            { text: "🇰🇭 ភាសាខ្មែរ (Khmer)", callback_data: "set_lang:km" },
+            { text: "🇬🇧 English", callback_data: "set_lang:en" },
+          ],
         ],
       },
     });

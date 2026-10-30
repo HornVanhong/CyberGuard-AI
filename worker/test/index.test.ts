@@ -1039,4 +1039,77 @@ describe("CyberGuard AI Cloudflare Worker", () => {
     expect(finalReport.text).toContain("telegram-free-gift.xyz");
     expect(finalReport.text).toContain("Gemini AI");
   });
+
+  it("32. Callback query 'set_lang:en' switches user language to English with English keyboard", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const update: TelegramUpdate = {
+      update_id: 320,
+      callback_query: {
+        id: "cb_query_999",
+        from: { id: 888123, is_bot: false, first_name: "Tester" },
+        data: "set_lang:en",
+        message: {
+          message_id: 55,
+          chat: { id: 888123, type: "private" },
+          date: Math.floor(Date.now() / 1000),
+        },
+      },
+    };
+
+    const req = new Request("https://telegram-scan-bot.vanhonghorn37.workers.dev/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": mockEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify(update),
+    });
+
+    const res = await worker.fetch(req, mockEnv, mockCtx);
+    expect(res.status).toBe(200);
+
+    // Verify answerCallbackQuery was called
+    const answerCall = fetchMock.mock.calls.find((c) => c[0].includes("answerCallbackQuery"));
+    expect(answerCall).toBeDefined();
+
+    // Verify confirmation message was sent in English
+    const sendMsgCall = fetchMock.mock.calls.find((c) => c[0].includes("sendMessage"));
+    expect(sendMsgCall).toBeDefined();
+    const payload = JSON.parse(sendMsgCall[1].body);
+    expect(payload.text).toContain("Language switched to *English 🇬🇧*");
+    expect(payload.reply_markup.keyboard[0][0].text).toBe("🔍 Scan File");
+  });
+
+  it("33. Command '/lang en' switches language directly to English", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const update: TelegramUpdate = {
+      update_id: 321,
+      message: {
+        message_id: 56,
+        chat: { id: 777123, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/lang en",
+      },
+    };
+
+    const req = new Request("https://telegram-scan-bot.vanhonghorn37.workers.dev/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": mockEnv.TELEGRAM_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify(update),
+    });
+
+    const res = await worker.fetch(req, mockEnv, mockCtx);
+    expect(res.status).toBe(200);
+
+    const sendMsgCall = fetchMock.mock.calls.find((c) => c[0].includes("sendMessage"));
+    expect(sendMsgCall).toBeDefined();
+    const payload = JSON.parse(sendMsgCall[1].body);
+    expect(payload.text).toContain("Language switched to *English 🇬🇧*");
+    expect(payload.reply_markup.keyboard[0][0].text).toBe("🔍 Scan File");
+  });
 });

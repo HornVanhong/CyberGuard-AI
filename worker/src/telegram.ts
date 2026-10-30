@@ -135,6 +135,28 @@ export function splitTelegramMessage(text: string, maxLen: number = 4000): strin
 }
 
 /**
+ * Acknowledges a Telegram callback query (stops loading spinner on buttons).
+ */
+export async function answerCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  text?: string
+): Promise<void> {
+  try {
+    await fetch(`${TELEGRAM_API_BASE}/bot${token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text || "",
+      }),
+    });
+  } catch {
+    // Non-critical action
+  }
+}
+
+/**
  * Returns the persistent bottom keyboard matching the user's preferred language.
  */
 export function getReplyKeyboard(lang: string = "km"): ReplyKeyboardMarkup {
@@ -155,7 +177,7 @@ export function getReplyKeyboard(lang: string = "km"): ReplyKeyboardMarkup {
 
   return {
     keyboard: [
-      [{ text: "🔍 Scan File" }, { text: "🔗 វិភាគ Link & សារ" }],
+      [{ text: "🔍 Scan File" }, { text: "🔗 Inspect Link & Msg" }],
       [{ text: "💬 Ask AI Security" }, { text: "⚙️ System Status" }],
       [{ text: "🔬 Ghidra Decompiler" }, { text: "📋 Scan History" }],
       [{ text: "🌐 Switch Language" }, { text: "📚 Help & Guide" }],
