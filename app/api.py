@@ -304,10 +304,13 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
             try:
                 r = requests.post(url, json=body, timeout=10)
                 if not r.ok:
+                    logger.warning(f"edit_tg markdown failed ({r.status_code}): {r.text}")
                     body.pop("parse_mode", None)
-                    requests.post(url, json=body, timeout=10)
-            except Exception:
-                pass
+                    r2 = requests.post(url, json=body, timeout=10)
+                    if not r2.ok:
+                        logger.warning(f"edit_tg fallback failed ({r2.status_code}): {r2.text}")
+            except Exception as e:
+                logger.error(f"edit_tg exception: {e}")
 
         try:
             logger.info(f"[BackgroundScan] Downloading '{filename}' for chat {chat_id}...")
@@ -369,7 +372,7 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                 edit_tg(p92)
 
                 try:
-                    from app.services.ai_service import AIService
+                    from app.services.ai_service import AIService, clean_ai_telegram_output
                     ai_service = AIService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL, enabled=True)
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -378,10 +381,10 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                         f"Findings: {'; '.join(findings)}\n\n"
                         f"Explain these results in {('Khmer' if lang == 'km' else 'English')} and give security advice."
                     )
-                    ai_res = loop.run_until_complete(ai_service.ask(prompt, lang=lang))
+                    raw_answer = loop.run_until_complete(ai_service.answer_security_question(question=prompt, lang=lang))
                     loop.close()
-                    if ai_res:
-                        ai_explanation = ai_res.answer
+                    if raw_answer:
+                        ai_explanation = clean_ai_telegram_output(raw_answer)
                 except Exception as e:
                     logger.error(f"Error calling Gemini in background: {e}")
 
@@ -400,14 +403,18 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
             report_msg = (
                 f"{header}\n\n"
                 f"{file_label} `{filename}`{size_label}\n"
-                f"{icon} *${v_label}* *{verdict}*\n"
-                f"⚠️ *${s_label}* *{severity}*\n\n"
+                f"{icon} *{v_label}* *{verdict}*\n"
+                f"⚠️ *{s_label}* *{severity}*\n\n"
                 f"{f_label}\n"
                 f"{f_text}"
                 f"{ai_sec}\n\n"
                 f"{footer}"
             )
 
+            # 1. Edit the progress message into the complete final scan report!
+            edit_tg(report_msg)
+
+            # 2. Refresh bottom reply keyboard
             reply_keyboard = {
                 "keyboard": [
                     [{"text": "🔍 ស្កេនឯកសារ" if lang == "km" else "🔍 Scan File"}, {"text": "🔗 វិភាគ Link & សារ" if lang == "km" else "🔗 Inspect Link & Msg"}],
@@ -419,8 +426,19 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                 "resize_keyboard": True,
                 "is_persistent": True,
             }
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": "🛡️ ជ្រើសរើសមុខងារខាងក្រោមដើម្បីបន្ត៖" if lang == "km" else "🛡️ Choose an option below to continue:",
+                        "reply_markup": reply_keyboard,
+                    },
+                    timeout=5,
+                )
+            except Exception:
+                pass
 
-            edit_tg(report_msg, reply_markup=reply_keyboard)
             logger.info(f"[BackgroundScan] Completed successfully for '{filename}'.")
 
         except Exception as e:
