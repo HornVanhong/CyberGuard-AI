@@ -543,7 +543,7 @@ Respond directly in ${lang === "km" ? "Khmer (ភាសាខ្មែរ)" : "E
 
 // ================= Status Report & Backend Communication =================
 
-const DEFAULT_SCANNER_URL = "https://karaoke-goat-dude-gamecube.trycloudflare.com";
+const DEFAULT_SCANNER_URL = "https://warning-gallery-rss-autos.trycloudflare.com";
 
 async function fetchScannerEngines(env) {
   const candidates = [

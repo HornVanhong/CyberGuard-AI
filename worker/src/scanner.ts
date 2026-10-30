@@ -30,7 +30,7 @@ export async function scanFile(
   const cleanName = sanitizeFilename(filename);
   const scanId = crypto.randomUUID().slice(0, 8);
 
-  const scannerUrl = env.SCANNER_SERVICE_URL || "https://karaoke-goat-dude-gamecube.trycloudflare.com";
+  const scannerUrl = env.SCANNER_SERVICE_URL || "https://warning-gallery-rss-autos.trycloudflare.com";
 
   // If scanner service endpoint is not configured, report accurately as UNAVAILABLE
   if (!scannerUrl) {
