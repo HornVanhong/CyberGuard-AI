@@ -12,10 +12,12 @@ import cgi
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
 import time
+import uuid
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -25,6 +27,7 @@ from typing import Any, Dict
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 from app.config import settings
+from app.services.file_service import FileService
 from app.scanners.orchestrator import ScannerOrchestrator
 from app.scanners.clamav_scanner import ClamAVScanner
 from app.scanners.yara_scanner import YaraScanner
@@ -510,9 +513,17 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
         orchestrator = ScannerOrchestrator(clamav=clamav, yara=yara)
         risk_engine = RiskEngine()
 
-        with tempfile.NamedTemporaryFile(delete=False, prefix="cyberguard_scan_") as tmp:
-            tmp.write(file_bytes)
-            tmp_path = Path(tmp.name)
+        file_service = FileService(base_temp_dir="temp_uploads")
+        scan_id = uuid.uuid4().hex[:12]
+        sandbox_dir = file_service.create_scan_sandbox(scan_id)
+
+        # Extract valid trailing ASCII extensions (e.g. .pdf.rar or .exe) so format scanners trigger accurately,
+        # but keep filename 100% ASCII-safe on disk so native C libraries (YARA, ClamAV) on Windows open it cleanly without Errno 22.
+        m = re.findall(r"\.[a-zA-Z0-9]{1,10}", filename)
+        safe_ext = "".join(m[-2:]) if m else ".bin"
+        safe_disk_name = f"scan_target{safe_ext}"
+        tmp_path = sandbox_dir / safe_disk_name
+        tmp_path.write_bytes(file_bytes)
 
         try:
             orch_result = await orchestrator.execute_scan(tmp_path, filename)
@@ -558,8 +569,7 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                 ],
             }
         finally:
-            if tmp_path.exists():
-                tmp_path.unlink()
+            file_service.cleanup_scan_dir(sandbox_dir)
 
 
 def run_scanner_api(host: str = "0.0.0.0", port: int = 8000):
