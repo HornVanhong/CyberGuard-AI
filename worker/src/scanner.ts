@@ -45,7 +45,7 @@ export async function scanFile(
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s execution budget
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s execution budget for large files
 
   try {
     const formData = new FormData();

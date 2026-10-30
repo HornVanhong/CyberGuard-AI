@@ -7,6 +7,9 @@ import { scanFile } from "./scanner";
 import { extractUrls, analyzeMessageHeuristics } from "./security";
 import {
   sendTelegramMessage,
+  sendMessageAndGetId,
+  editTelegramMessage,
+  renderProgressBar,
   sendChatAction,
   answerCallbackQuery,
   updateTelegramMenuCommands,
@@ -120,7 +123,7 @@ export async function routeTelegramUpdate(
     }
 
     // Process file scan (can use ctx.waitUntil if available)
-    const scanPromise = handleFileUpload(token, chatId, fileId, filename, env, lang);
+    const scanPromise = handleFileUpload(token, chatId, fileId, filename, env, lang, fileSize);
     if (ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(scanPromise);
     } else {
@@ -538,34 +541,69 @@ async function handleFileUpload(
   fileId: string,
   filename: string,
   env: Env,
-  lang: string
+  lang: string,
+  fileSize: number = 0
 ): Promise<void> {
-  const progressText =
-    lang === "km"
-      ? `🔄 *កំពុងទាញយក និងស្កេនឯកសារជាមួយ ClamAV និង YARA...*\n_សូមរង់ចាំបន្តិច..._`
-      : `🔄 *Downloading and analyzing file with ClamAV & YARA...*\n_Please wait a moment..._`;
+  const sizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(1) : "";
+  const sizeLabel = sizeMB ? ` (${sizeMB} MB)` : "";
 
-  await sendTelegramMessage(token, {
+  // 1. Initial progress message (15%)
+  const initText =
+    lang === "km"
+      ? `📥 *កំពុងចាប់ផ្តើមស្កេនឯកសារ${sizeLabel}*\n\`${renderProgressBar(15)}\` 15%\n\n⚡ _កំពុងទាក់ទងម៉ាស៊ីនស្កេន និងទាញយកឯកសារ..._`
+      : `📥 *Starting file inspection${sizeLabel}*\n\`${renderProgressBar(15)}\` 15%\n\n⚡ _Contacting scanner & fetching file..._`;
+
+  const statusMsgId = await sendMessageAndGetId(token, {
     chat_id: chatId,
-    text: progressText,
+    text: initText,
     parse_mode: "Markdown",
   });
 
   try {
-    // 1. Get file metadata & download from Telegram
+    // 2. Get file metadata & download from Telegram
     const fileInfo = await getTelegramFile(token, fileId);
     if (!fileInfo.result?.file_path) {
       throw new Error("Unable to obtain file download path from Telegram API.");
     }
 
+    const actualSize = fileInfo.result?.file_size || fileSize;
+    const finalSizeMB = actualSize > 0 ? (actualSize / (1024 * 1024)).toFixed(1) : "";
+    const finalSizeLabel = finalSizeMB ? ` (${finalSizeMB} MB)` : "";
+
+    // Update progress to 40% (Downloading)
+    if (statusMsgId) {
+      const p40 =
+        lang === "km"
+          ? `⚡ *កំពុងទាញយកឯកសារ${finalSizeLabel}*\n\`${renderProgressBar(40)}\` 40%\n\n📥 _ទាញយកល្បឿនលឿនផ្ទាល់ពី Telegram CDN..._`
+          : `⚡ *Downloading file${finalSizeLabel}*\n\`${renderProgressBar(40)}\` 40%\n\n📥 _Direct high-speed download from Telegram CDN..._`;
+      await editTelegramMessage(token, chatId, statusMsgId, p40);
+    }
+
     const fileBuffer = await downloadTelegramFile(token, fileInfo.result.file_path);
 
-    // 2. Submit to ClamAV and YARA scanner
+    // Update progress to 75% (Scanning with ClamAV & YARA)
+    if (statusMsgId) {
+      const p75 =
+        lang === "km"
+          ? `🔍 *កំពុងវិភាគសុវត្ថិភាពឯកសារ (75%)*\n\`${renderProgressBar(75)}\`\n\n🛡️ _ClamAV Antivirus, YARA Rules & SRE Engines..._`
+          : `🔍 *Analyzing file security (75%)*\n\`${renderProgressBar(75)}\`\n\n🛡️ _ClamAV Antivirus, YARA Rules & SRE Engines..._`;
+      await editTelegramMessage(token, chatId, statusMsgId, p75);
+    }
+
+    // 3. Submit to ClamAV and YARA scanner
     const report = await scanFile(fileBuffer, filename, env);
 
-    // 3. Ask Gemini to summarize and explain the findings
+    // 4. Ask Gemini to summarize and explain the findings (90%)
     let aiExplanation = "";
     if (env.GEMINI_API_KEY) {
+      if (statusMsgId) {
+        const p90 =
+          lang === "km"
+            ? `🤖 *កំពុងបូកសរុបលទ្ធផលជាមួយ AI (90%)*\n\`${renderProgressBar(90)}\`\n\n🧠 _Google Gemini AI Security Assessment..._`
+            : `🤖 *Generating AI Explanation (90%)*\n\`${renderProgressBar(90)}\`\n\n🧠 _Google Gemini AI Security Assessment..._`;
+        await editTelegramMessage(token, chatId, statusMsgId, p90);
+      }
+
       aiExplanation = await askGemini(
         env.GEMINI_API_KEY,
         lang === "km"
@@ -579,7 +617,7 @@ async function handleFileUpload(
       );
     }
 
-    // 4. Build comprehensive Telegram report
+    // 5. Build comprehensive Telegram report
     const verdictIcon =
       report.verdict === "MALICIOUS"
         ? "🔴"
@@ -600,7 +638,7 @@ async function handleFileUpload(
       lang === "km"
         ? `🛡️ *CYBERGUARD AI — របាយការណ៍ស្កេនមេរោគ*
 
-📄 *ឯកសារ:* \`${report.filename}\`
+📄 *ឯកសារ:* \`${report.filename}\`${finalSizeLabel}
 📦 *ទំហំ:* ${(report.file_size_bytes / 1024).toFixed(1)} KB
 🔐 *SHA-256:*
 \`${report.sha256}\`
@@ -619,7 +657,7 @@ ${aiExplanation}
 ⏱️ *រយៈពេលស្កេន:* \`${report.execution_time_ms} ms\``
         : `🛡️ *CYBERGUARD AI — SECURITY SCAN REPORT*
 
-📄 *File:* \`${report.filename}\`
+📄 *File:* \`${report.filename}\`${finalSizeLabel}
 📦 *Size:* ${(report.file_size_bytes / 1024).toFixed(1)} KB
 🔐 *SHA-256:*
 \`${report.sha256}\`
@@ -637,23 +675,31 @@ ${aiExplanation}
 
 ⏱️ *Scan Duration:* \`${report.execution_time_ms} ms\``;
 
-    await sendTelegramMessage(token, {
-      chat_id: chatId,
-      text: finalReport,
-      parse_mode: "Markdown",
-      reply_markup: getReplyKeyboard(lang),
-    });
+    if (statusMsgId) {
+      await editTelegramMessage(token, chatId, statusMsgId, finalReport, "Markdown", getReplyKeyboard(lang));
+    } else {
+      await sendTelegramMessage(token, {
+        chat_id: chatId,
+        text: finalReport,
+        parse_mode: "Markdown",
+        reply_markup: getReplyKeyboard(lang),
+      });
+    }
   } catch (err: any) {
     const errorMsg =
       lang === "km"
         ? `⚠️ ការស្កេនជួបបញ្ហា: ${err.message || "Unknown error"}`
         : `⚠️ Scan failed: ${err.message || "Unknown error"}`;
 
-    await sendTelegramMessage(token, {
-      chat_id: chatId,
-      text: errorMsg,
-      reply_markup: getReplyKeyboard(lang),
-    });
+    if (statusMsgId) {
+      await editTelegramMessage(token, chatId, statusMsgId, errorMsg, "Markdown", getReplyKeyboard(lang));
+    } else {
+      await sendTelegramMessage(token, {
+        chat_id: chatId,
+        text: errorMsg,
+        reply_markup: getReplyKeyboard(lang),
+      });
+    }
   }
 }
 

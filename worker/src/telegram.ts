@@ -55,6 +55,78 @@ export async function sendTelegramMessage(
 }
 
 /**
+ * Renders a visual Unicode progress bar for Telegram messages.
+ */
+export function renderProgressBar(percentage: number, length: number = 10): string {
+  const clamped = Math.max(0, Math.min(100, Math.round(percentage)));
+  const filled = Math.round((clamped / 100) * length);
+  const empty = length - filled;
+  return "▰".repeat(filled) + "▱".repeat(empty);
+}
+
+/**
+ * Edits an existing Telegram message in-place for live progress animation.
+ */
+export async function editTelegramMessage(
+  token: string,
+  chatId: number,
+  messageId: number,
+  text: string,
+  parseMode: "Markdown" | "HTML" | undefined = "Markdown",
+  replyMarkup?: any
+): Promise<boolean> {
+  if (!messageId) return false;
+  const body: any = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: parseMode,
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+
+  try {
+    const res = await fetch(`${TELEGRAM_API_BASE}/bot${token}/editMessageText`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok && parseMode) {
+      delete body.parse_mode;
+      await fetch(`${TELEGRAM_API_BASE}/bot${token}/editMessageText`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sends a message and returns its Telegram message_id for subsequent edits.
+ */
+export async function sendMessageAndGetId(
+  token: string,
+  payload: SendMessagePayload
+): Promise<number | null> {
+  try {
+    const res = await fetch(`${TELEGRAM_API_BASE}/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const data: any = await res.json();
+      return data.result?.message_id || null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
  * Sends chat action indicators (e.g., 'typing', 'upload_document').
  */
 export async function sendChatAction(

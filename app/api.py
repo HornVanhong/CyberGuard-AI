@@ -191,42 +191,66 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
             return
 
-        try:
-            content_type = self.headers.get("Content-Type", "")
-            if not content_type.startswith("multipart/form-data"):
-                self._set_headers(400)
-                self.wfile.write(json.dumps({"error": "Expected multipart/form-data"}).encode())
-                return
+        if self.path == "/scan":
+            try:
+                content_type = self.headers.get("Content-Type", "")
+                file_bytes = b""
+                filename = "unknown.bin"
 
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={
-                    "REQUEST_METHOD": "POST",
-                    "CONTENT_TYPE": self.headers["Content-Type"],
-                },
-            )
+                if "application/json" in content_type:
+                    content_len = int(self.headers.get("Content-Length", 0))
+                    raw_body = self.rfile.read(content_len).decode("utf-8")
+                    payload = json.loads(raw_body) if raw_body else {}
+                    file_url = payload.get("file_url")
+                    filename = payload.get("filename", "uploaded_file.bin")
 
-            if "file" not in form:
-                self._set_headers(400)
-                self.wfile.write(json.dumps({"error": "Missing 'file' in multipart form"}).encode())
-                return
+                    if not file_url:
+                        self._set_headers(400)
+                        self.wfile.write(json.dumps({"error": "Missing 'file_url' in JSON body"}).encode())
+                        return
 
-            file_item = form["file"]
-            filename = file_item.filename or "unknown.bin"
-            file_bytes = file_item.file.read()
+                    logger.info(f"Direct high-speed download initiated for '{filename}' from Telegram...")
+                    import requests
+                    with requests.get(file_url, stream=True, timeout=90) as r:
+                        r.raise_for_status()
+                        file_bytes = r.content
+                    logger.info(f"Direct download completed: {len(file_bytes)} bytes downloaded.")
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            scan_report = loop.run_until_complete(self._execute_scan(filename, file_bytes))
-            loop.close()
+                elif content_type.startswith("multipart/form-data"):
+                    form = cgi.FieldStorage(
+                        fp=self.rfile,
+                        headers=self.headers,
+                        environ={
+                            "REQUEST_METHOD": "POST",
+                            "CONTENT_TYPE": self.headers["Content-Type"],
+                        },
+                    )
 
-            self._set_headers(200)
-            self.wfile.write(json.dumps(scan_report, indent=2).encode())
-        except Exception as e:
-            logger.error(f"Error in /scan handler: {e}")
-            self._set_headers(500)
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+                    if "file" not in form:
+                        self._set_headers(400)
+                        self.wfile.write(json.dumps({"error": "Missing 'file' in multipart form"}).encode())
+                        return
+
+                    file_item = form["file"]
+                    filename = file_item.filename or "unknown.bin"
+                    file_bytes = file_item.file.read()
+                else:
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Expected application/json or multipart/form-data"}).encode())
+                    return
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                scan_report = loop.run_until_complete(self._execute_scan(filename, file_bytes))
+                loop.close()
+
+                self._set_headers(200)
+                self.wfile.write(json.dumps(scan_report, indent=2).encode())
+            except Exception as e:
+                logger.error(f"Error in /scan handler: {e}")
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return
 
     async def _collect_engine_status(self) -> Dict[str, Any]:
         """Gathers status across all 12 engines."""

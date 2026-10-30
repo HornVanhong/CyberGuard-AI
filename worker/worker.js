@@ -425,14 +425,51 @@ async function updateTelegramMenuCommands(token, chatId, lang = "km") {
   } catch {}
 }
 
+function renderProgressBar(percentage, length = 10) {
+  const clamped = Math.max(0, Math.min(100, Math.round(percentage)));
+  const filled = Math.round((clamped / 100) * length);
+  const empty = length - filled;
+  return "▰".repeat(filled) + "▱".repeat(empty);
+}
+
+async function editTelegramMessage(token, chatId, messageId, text, parseMode = "Markdown", replyMarkup = null) {
+  if (!messageId) return;
+  const url = `https://api.telegram.org/bot${token}/editMessageText`;
+  const body = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: parseMode,
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok && parseMode) {
+      delete body.parse_mode;
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+  } catch {}
+}
+
 async function sendTelegramMessage(token, payload) {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const text = payload.text || "";
   const maxLen = 4000;
+  let lastResult = null;
   for (let i = 0; i < text.length; i += maxLen) {
     const chunk = text.slice(i, i + maxLen);
     const isLast = i + maxLen >= text.length;
-    const res = await fetch(url, {
+    let res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -444,7 +481,7 @@ async function sendTelegramMessage(token, payload) {
     });
     if (!res.ok && payload.parse_mode) {
       // Fallback: Retry as plain text if Markdown parsing failed
-      await fetch(url, {
+      res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -454,7 +491,11 @@ async function sendTelegramMessage(token, payload) {
         }),
       });
     }
+    try {
+      lastResult = await res.json();
+    } catch {}
   }
+  return lastResult;
 }
 
 async function sendChatAction(token, chatId, action = "typing") {
@@ -623,7 +664,7 @@ async function fetchScannerEngines(env) {
   return null;
 }
 
-async function scanFileWithBackend(fileBuffer, filename, env) {
+async function scanFileWithBackend(fileBufferOrUrl, filename, env) {
   const candidates = [
     DEFAULT_SCANNER_URL,
     env.SCANNER_SERVICE_URL,
@@ -632,16 +673,27 @@ async function scanFileWithBackend(fileBuffer, filename, env) {
   for (const base of candidates) {
     try {
       const cleanBase = base.replace(/\/+$/, "");
-      const formData = new FormData();
-      formData.append("file", new Blob([fileBuffer]), filename);
       const headers = {};
       if (env.SCANNER_API_TOKEN) headers["Authorization"] = `Bearer ${env.SCANNER_API_TOKEN}`;
+      
+      let body;
+      if (typeof fileBufferOrUrl === "string") {
+        // Fast direct download from Telegram CDN via backend
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify({ file_url: fileBufferOrUrl, filename });
+      } else {
+        // Multipart upload fallback
+        const formData = new FormData();
+        formData.append("file", new Blob([fileBufferOrUrl]), filename);
+        body = formData;
+      }
+
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 35000);
+      const timer = setTimeout(() => controller.abort(), 120000); // 120s budget for deep scans
       const res = await fetch(`${cleanBase}/scan`, {
         method: "POST",
         headers,
-        body: formData,
+        body,
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -747,26 +799,94 @@ async function getStatusReport(env, lang) {
 
 // ================= File Analysis =================
 
-async function handleFileUpload(token, chatId, fileId, filename, env, lang) {
-  await sendTelegramMessage(token, {
+async function handleFileUpload(token, chatId, fileId, filename, env, lang, fileSize = 0) {
+  const sizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(1) : "";
+  const sizeLabel = sizeMB ? ` (${sizeMB} MB)` : "";
+
+  // 1. Send initial progress message (15%)
+  const initMsg = lang === "km"
+    ? `📥 *កំពុងចាប់ផ្តើមស្កេនឯកសារ${sizeLabel}*\n\`${renderProgressBar(15)}\` 15%\n\n⚡ _កំពុងទាក់ទងម៉ាស៊ីនស្កេន និងទាញយកឯកសារ..._`
+    : `📥 *Starting file inspection${sizeLabel}*\n\`${renderProgressBar(15)}\` 15%\n\n⚡ _Contacting scanner & fetching file..._`;
+
+  const statusRes = await sendTelegramMessage(token, {
     chat_id: chatId,
-    text: lang === "km"
-      ? "🔄 *កំពុងទាញយក និងស្កេនឯកសារជាមួយ ClamAV, YARA និងម៉ាស៊ីនវិភាគ...*\n_សូមរង់ចាំបន្តិច..._"
-      : "🔄 *Downloading and analyzing file with ClamAV & YARA...*\n_Please wait a moment..._",
+    text: initMsg,
     parse_mode: "Markdown",
   });
+  const statusMsgId = statusRes?.result?.message_id;
 
   try {
+    // 2. Obtain file info from Telegram
     const fileRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
     const fileData = await fileRes.json();
     if (!fileData.ok || !fileData.result?.file_path) {
       throw new Error("Unable to obtain file from Telegram.");
     }
 
-    const dlRes = await fetch(`https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`);
-    const fileBuffer = await dlRes.arrayBuffer();
+    const actualSize = fileData.result?.file_size || fileSize;
+    const finalSizeMB = actualSize > 0 ? (actualSize / (1024 * 1024)).toFixed(1) : "";
+    const finalSizeLabel = finalSizeMB ? ` (${finalSizeMB} MB)` : "";
+    const directFileUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`;
 
-    const scanReport = await scanFileWithBackend(fileBuffer, filename, env);
+    // Update progress to 40% (Transferring / Downloading)
+    if (statusMsgId) {
+      const p40 = lang === "km"
+        ? `⚡ *កំពុងទាញយកឯកសារ${finalSizeLabel}*\n\`${renderProgressBar(40)}\` 40%\n\n📥 _ទាញយកល្បឿនលឿនផ្ទាល់ពី Telegram CDN..._`
+        : `⚡ *Downloading file${finalSizeLabel}*\n\`${renderProgressBar(40)}\` 40%\n\n📥 _Direct high-speed download from Telegram CDN..._`;
+      await editTelegramMessage(token, chatId, statusMsgId, p40);
+    }
+
+    // Attempt direct URL scan with local backend first (super fast direct download)
+    let scanReport = await scanFileWithBackend(directFileUrl, filename, env);
+
+    // Fallback: If backend direct URL didn't work, Worker streams the download and sends buffer
+    if (!scanReport) {
+      const dlRes = await fetch(directFileUrl);
+      const contentLength = Number(dlRes.headers.get("content-length")) || actualSize || 0;
+      let receivedBytes = 0;
+      let fileBuffer;
+
+      if (dlRes.body && typeof dlRes.body.getReader === "function") {
+        const reader = dlRes.body.getReader();
+        const chunks = [];
+        let lastUpdate = Date.now();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          receivedBytes += value.length;
+          const now = Date.now();
+          if (contentLength > 0 && now - lastUpdate > 1200 && statusMsgId) {
+            const pct = Math.min(Math.round((receivedBytes / contentLength) * 45) + 20, 65);
+            const mbDone = (receivedBytes / (1024 * 1024)).toFixed(1);
+            const pDown = lang === "km"
+              ? `📥 *កំពុងទាញយកឯកសារ (${pct}%):*\n\`${renderProgressBar(pct)}\`\n(${mbDone} MB / ${finalSizeMB} MB)\n\n_សូមរង់ចាំបន្តិច..._`
+              : `📥 *Downloading file (${pct}%):*\n\`${renderProgressBar(pct)}\`\n(${mbDone} MB / ${finalSizeMB} MB)\n\n_Please wait a moment..._`;
+            await editTelegramMessage(token, chatId, statusMsgId, pDown);
+            lastUpdate = now;
+          }
+        }
+        const fullArr = new Uint8Array(receivedBytes);
+        let pos = 0;
+        for (const c of chunks) {
+          fullArr.set(c, pos);
+          pos += c.length;
+        }
+        fileBuffer = fullArr.buffer;
+      } else {
+        fileBuffer = await dlRes.arrayBuffer();
+      }
+
+      scanReport = await scanFileWithBackend(fileBuffer, filename, env);
+    }
+
+    // Update progress to 75% (Scanning with ClamAV & YARA)
+    if (statusMsgId) {
+      const p75 = lang === "km"
+        ? `🔍 *កំពុងវិភាគសុវត្ថិភាពឯកសារ (75%)*\n\`${renderProgressBar(75)}\`\n\n🛡️ _ClamAV Antivirus, YARA Rules & SRE Engines..._`
+        : `🔍 *Analyzing file security (75%)*\n\`${renderProgressBar(75)}\`\n\n🛡️ _ClamAV Antivirus, YARA Rules & SRE Engines..._`;
+      await editTelegramMessage(token, chatId, statusMsgId, p75);
+    }
 
     const verdict = scanReport?.verdict || "INCONCLUSIVE";
     const severity = scanReport?.severity || "MEDIUM";
@@ -775,6 +895,12 @@ async function handleFileUpload(token, chatId, fileId, filename, env, lang) {
 
     let aiExplanation = "";
     if (env.GEMINI_API_KEY) {
+      if (statusMsgId) {
+        const p90 = lang === "km"
+          ? `🤖 *កំពុងបូកសរុបលទ្ធផលជាមួយ AI (90%)*\n\`${renderProgressBar(90)}\`\n\n🧠 _Google Gemini AI Security Assessment..._`
+          : `🤖 *Generating AI Explanation (90%)*\n\`${renderProgressBar(90)}\`\n\n🧠 _Google Gemini AI Security Assessment..._`;
+        await editTelegramMessage(token, chatId, statusMsgId, p90);
+      }
       const prompt = `[File Scan Result]
 File: ${filename}
 Verdict: ${verdict}
@@ -785,32 +911,52 @@ Explain these results to the user in ${lang === "km" ? "Khmer" : "English"} and 
       aiExplanation = await askGemini(env.GEMINI_API_KEY, prompt, env.GEMINI_MODEL || "gemini-3.5-flash", lang);
     }
 
-    const reportMsg = `🛡️ *CyberGuard AI — លទ្ធផលស្កេនឯកសារ*
+    const header = lang === "km" ? "🛡️ *CyberGuard AI — លទ្ធផលស្កេនឯកសារ*" : "🛡️ *CyberGuard AI — File Scan Result*";
+    const fileLabel = lang === "km" ? "📄 *ឯកសារ:*" : "📄 *File:*";
+    const verdictLabel = lang === "km" ? "លទ្ធផល (Verdict):" : "Verdict:";
+    const severityLabel = lang === "km" ? "កម្រិតហានិភ័យ:" : "Severity:";
+    const findingsLabel = lang === "km" ? "🔍 *ការរកឃើញ (Findings):*" : "🔍 *Findings:*";
+    const aiLabel = lang === "km" ? "🤖 *ការវិភាគពី Gemini AI:*" : "🤖 *Gemini AI Assessment:*";
+    const footer = lang === "km" ? "🛡️ _CyberGuard AI Zero-Trust File Inspection_" : "🛡️ _CyberGuard AI Zero-Trust File Inspection_";
 
-📄 *ឯកសារ:* \`${filename}\`
-${icon} *លទ្ធផល (Verdict):* *${verdict}*
-⚠️ *កម្រិតហានិភ័យ:* *${severity}*
+    const reportMsg = `${header}
 
-🔍 *ការរកឃើញ (Findings):*
+${fileLabel} \`${filename}\`${finalSizeLabel}
+${icon} *${verdictLabel}* *${verdict}*
+⚠️ *${severityLabel}* *${severity}*
+
+${findingsLabel}
 ${findings.map((f) => `• ${f}`).join("\n")}
 
-🤖 *ការវិភាគពី Gemini AI:*
+${aiLabel}
 ${aiExplanation}
 
-🛡️ _CyberGuard AI Zero-Trust File Inspection_`;
+${footer}`;
 
-    await sendTelegramMessage(token, {
-      chat_id: chatId,
-      text: reportMsg,
-      parse_mode: "Markdown",
-      reply_markup: getReplyKeyboard(lang),
-    });
+    if (statusMsgId) {
+      await editTelegramMessage(token, chatId, statusMsgId, reportMsg, "Markdown", getReplyKeyboard(lang));
+    } else {
+      await sendTelegramMessage(token, {
+        chat_id: chatId,
+        text: reportMsg,
+        parse_mode: "Markdown",
+        reply_markup: getReplyKeyboard(lang),
+      });
+    }
   } catch (err) {
-    await sendTelegramMessage(token, {
-      chat_id: chatId,
-      text: `❌ បរាជ័យក្នុងការស្កេនឯកសារ៖ ${err.message}`,
-      reply_markup: getReplyKeyboard(lang),
-    });
+    const errorText = lang === "km"
+      ? `❌ បរាជ័យក្នុងការស្កេនឯកសារ៖ ${err.message}`
+      : `❌ Failed to scan file: ${err.message}`;
+
+    if (statusMsgId) {
+      await editTelegramMessage(token, chatId, statusMsgId, errorText, "Markdown", getReplyKeyboard(lang));
+    } else {
+      await sendTelegramMessage(token, {
+        chat_id: chatId,
+        text: errorText,
+        reply_markup: getReplyKeyboard(lang),
+      });
+    }
   }
 }
 
@@ -1013,7 +1159,7 @@ async function routeTelegramUpdate(update, env, ctx) {
       return;
     }
 
-    const p = handleFileUpload(token, chatId, fileId, filename, env, lang);
+    const p = handleFileUpload(token, chatId, fileId, filename, env, lang, fileSize);
     if (ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(p);
     } else {
