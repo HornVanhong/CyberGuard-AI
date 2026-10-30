@@ -385,6 +385,46 @@ async function answerCallbackQuery(token, callbackQueryId, text) {
   } catch {}
 }
 
+async function updateTelegramMenuCommands(token, chatId, lang = "km") {
+  const commands =
+    lang === "km"
+      ? [
+          { command: "start", description: "🚀 ចាប់ផ្តើម Bot និងបើកផ្ទាំងមឺនុយមេ" },
+          { command: "scan", description: "🔍 ស្កេនឯកសារស្វែងរកមេរោគ" },
+          { command: "check", description: "🔗 វិភាគ Link & សារបន្លំ (Phishing/Scam)" },
+          { command: "status", description: "⚙️ ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន និង AI" },
+          { command: "ask", description: "💬 សួរសំណួរសន្តិសុខសាយប័រជាមួយ AI" },
+          { command: "ghidra", description: "🔬 វិភាគស៊ីជម្រៅ និង Decompile (Ghidra)" },
+          { command: "history", description: "📋 មើលប្រវត្តិឯកសារដែលបានស្កេន" },
+          { command: "privacy", description: "🔐 គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព" },
+          { command: "lang", description: "🌐 ផ្លាស់ប្តូរភាសា (English / ខ្មែរ)" },
+          { command: "help", description: "📚 ការណែនាំ និងរបៀបប្រើប្រាស់" },
+        ]
+      : [
+          { command: "start", description: "🚀 Start bot and show main menu" },
+          { command: "scan", description: "🔍 Scan a file for malware & threats" },
+          { command: "check", description: "🔗 Check suspicious links & phishing" },
+          { command: "status", description: "⚙️ Check scanner engines & AI health" },
+          { command: "ask", description: "💬 Ask cybersecurity AI assistant" },
+          { command: "ghidra", description: "🔬 Decompile binary with Ghidra SRE" },
+          { command: "history", description: "📋 View your recent scan history" },
+          { command: "privacy", description: "🔐 Review zero-retention privacy policy" },
+          { command: "lang", description: "🌐 Switch language (English / ខ្មែរ)" },
+          { command: "help", description: "📚 User guide and risk levels explained" },
+        ];
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commands,
+        scope: { type: "chat", chat_id: chatId },
+      }),
+    });
+  } catch {}
+}
+
 async function sendTelegramMessage(token, payload) {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const text = payload.text || "";
@@ -439,8 +479,9 @@ function cleanTelegramMarkdown(text) {
   clean = clean.replace(/^\s*[\*\-]\s+/gm, "• ");
   // Remove markdown horizontal dividers (---, ***)
   clean = clean.replace(/^\s*[-*_]{3,}\s*$/gm, "");
-  // Replace stray double asterisks/artifacts (e.g. "* *Point 2: Updates* 2. **")
-  clean = clean.replace(/\*\s*\*/g, "•");
+  // Replace stray triple asterisks and normalize
+  clean = clean.replace(/\*{3,}/g, "**");
+  clean = clean.replace(/^\s*\*\s*\*\s*/gm, "• ");
   clean = clean.replace(/\s*\*+\s*$/gm, "");
   // Replace stray Thai/Lao mis-generations with proper Khmer
   clean = clean.replace(/[\u0E00-\u0EFF]+/g, "");
@@ -895,6 +936,7 @@ async function routeTelegramUpdate(update, env, ctx) {
       USER_LANGUAGES.set(chatId, newLang);
 
       await answerCallbackQuery(token, cb.id, newLang === "km" ? "ភាសាខ្មែរ 🇰🇭" : "English 🇬🇧");
+      await updateTelegramMenuCommands(token, chatId, newLang);
 
       const confirmMsg =
         newLang === "km"
@@ -986,7 +1028,9 @@ async function routeTelegramUpdate(update, env, ctx) {
 
   // /start
   if (lowerText.startsWith("/start")) {
-    const welcome = `🛡️ *CyberGuard AI — Malware Scanner & Security Assistant*
+    const welcome =
+      lang === "km"
+        ? `🛡️ *CyberGuard AI — Malware Scanner & Security Assistant*
 
 សូមស្វាគមន៍! ខ្ញុំគឺជា CyberGuard AI បូតសម្រាប់ត្រួតពិនិត្យមេរោគលើឯកសារ, តំណភ្ជាប់ (Links) និងប្រឹក្សាយោបល់សន្តិសុខសាយប័រ។
 
@@ -997,7 +1041,19 @@ async function routeTelegramUpdate(update, env, ctx) {
 • វិភាគ និងពន្យល់លទ្ធផលជាមួយ Google Gemini AI
 • ពិនិត្យកូដ Executable ជាមួយ Ghidra SRE
 
-📤 *សូមផ្ញើឯកសារ ឬតំណភ្ជាប់ (Link) មកកាន់ទីនេះដើម្បីចាប់ផ្តើមស្កេន ឬជ្រើសរើសមុខងារពីក្តារចុចខាងក្រោម៖*`;
+📤 *សូមផ្ញើឯកសារ ឬតំណភ្ជាប់ (Link) មកកាន់ទីនេះដើម្បីចាប់ផ្តើមស្កេន ឬជ្រើសរើសមុខងារពីក្តារចុចខាងក្រោម៖*`
+        : `🛡️ *CyberGuard AI — Malware Scanner & Security Assistant*
+
+Welcome! I am CyberGuard AI, an expert cybersecurity assistant and malware scanner.
+
+✨ *Core Capabilities:*
+• File malware scanning via ClamAV & YARA Rules
+• Link & Phishing threat inspection (Zero-Trust Heuristics)
+• External threat intelligence via VirusTotal
+• Deep technical explanations with Google Gemini AI
+• Executable binary analysis with Ghidra SRE
+
+📤 *Send or forward any file or link to begin scanning, or choose an option from the menu below:*`;
 
     await sendTelegramMessage(token, {
       chat_id: chatId,
@@ -1010,7 +1066,9 @@ async function routeTelegramUpdate(update, env, ctx) {
 
   // /help or Help button
   if (lowerText.startsWith("/help") || lowerText.includes("ការណែនាំ") || lowerText.includes("help")) {
-    const helpText = `📚 *CyberGuard AI — ការណែនាំ និងរបៀបប្រើប្រាស់*
+    const helpText =
+      lang === "km"
+        ? `📚 *CyberGuard AI — ការណែនាំ និងរបៀបប្រើប្រាស់*
 
 📌 *របៀបស្កេន និងត្រួតពិនិត្យ៖*
 ១. *ស្កេនឯកសារ៖* ផ្ញើ ឬ Forward ឯកសារ (.exe, .pdf, .docx, .zip, .apk) មកកាន់ទីនេះ។
@@ -1023,7 +1081,21 @@ async function routeTelegramUpdate(update, env, ctx) {
 • /ask [សំណួរ] — សួរសំណួរសន្តិសុខសាយប័រជាមួយ AI
 • /status — ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន
 • /privacy — អានគោលការណ៍ឯកជនភាព
-• /lang — ផ្លាស់ប្តូរភាសា (English / ខ្មែរ)`;
+• /lang — ផ្លាស់ប្តូរភាសា (English / ខ្មែរ)`
+        : `📚 *CyberGuard AI — Help & User Guide*
+
+📌 *How to inspect files and links:*
+1. *Scan Files:* Upload or forward any file (.exe, .pdf, .docx, .zip, .apk) here.
+2. *Check Links:* Send or paste any suspicious URL or message to analyze phishing threats.
+3. *Ask AI Security:* Ask any question about malware, ransomware, or security advice.
+
+⌨️ *Official Commands:*
+• /scan — Scan a file for threats
+• /check [link/message] — Analyze suspicious URLs or phishing texts
+• /ask [question] — Ask AI cybersecurity assistant
+• /status — Check scanning engines health
+• /privacy — Review privacy & data retention policy
+• /lang — Switch language (English / ខ្មែរ)`;
 
     await sendTelegramMessage(token, {
       chat_id: chatId,
@@ -1036,9 +1108,14 @@ async function routeTelegramUpdate(update, env, ctx) {
 
   // /scan or Scan button
   if (lowerText.startsWith("/scan") || lowerText.includes("ស្កេនឯកសារ") || lowerText.includes("scan file")) {
+    const scanPrompt =
+      lang === "km"
+        ? `📤 *សូមផ្ញើ ឬ Forward ឯកសារដែលអ្នកចង់ស្កេនមកកាន់ទីនេះ៖*\n\n_ប្រព័ន្ធគាំទ្រឯកសារទូទៅ (.exe, .pdf, .docx, .xlsx, .zip, .apk, .py, etc.) រហូតដល់ 20 MB។_`
+        : `📤 *Please send or forward any file you wish to scan here:*\n\n_Supported formats include .exe, .pdf, .docx, .xlsx, .zip, .apk, .py, etc. (up to 20 MB)._`;
+
     await sendTelegramMessage(token, {
       chat_id: chatId,
-      text: `📤 *សូមផ្ញើ ឬ Forward ឯកសារដែលអ្នកចង់ស្កេនមកកាន់ទីនេះ៖*\n\n_ប្រព័ន្ធគាំទ្រឯកសារទូទៅ (.exe, .pdf, .docx, .xlsx, .zip, .apk, .py, etc.) រហូតដល់ 20 MB។_`,
+      text: scanPrompt,
       parse_mode: "Markdown",
       reply_markup: getReplyKeyboard(lang),
     });
@@ -1122,15 +1199,44 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
 
   // /privacy or Privacy button
   if (lowerText.startsWith("/privacy") || lowerText.includes("គោលការណ៍ឯកជនភាព") || lowerText.includes("privacy")) {
-    const privText = `🔐 *CyberGuard AI — គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព*
+    const privText =
+      lang === "km"
+        ? `🔐 *CyberGuard AI — គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព*
 
 ១. *មិនរក្សាទុកឯកសារ (Zero Retention):* ឯកសារត្រូវបានវិភាគក្នុង Memory និង Sandbox ហើយលុបចេញភ្លាមៗក្រោយពេលស្កេនចប់។
 ២. *ការការពារ Secrets:* គ្មានទិន្នន័យឯកជន ឬ Token ណាត្រូវបានកត់ត្រាក្នុង Logs ឡើយ។
-៣. *ការវិភាគ AI:* មានតែទិន្នន័យបច្ចេកទេស និង Metadata គ្មានគ្រោះថ្នាក់ប៉ុណ្ណោះដែលបញ្ជូនទៅ AI ពន្យល់។`;
+៣. *ការវិភាគ AI:* មានតែទិន្នន័យបច្ចេកទេស និង Metadata គ្មានគ្រោះថ្នាក់ប៉ុណ្ណោះដែលបញ្ជូនទៅ AI ពន្យល់។`
+        : `🔐 *CyberGuard AI — Zero-Retention Privacy Policy*
+
+1. *Zero File Retention:* Files are analyzed in an isolated sandbox and immediately deleted upon scan completion.
+2. *Secret Redaction:* Credentials, tokens, and personal keys are strictly redacted and never logged.
+3. *AI Privacy:* Only non-sensitive technical metadata and decompilation signatures are passed to Google Gemini AI for explanations.`;
 
     await sendTelegramMessage(token, {
       chat_id: chatId,
       text: privText,
+      parse_mode: "Markdown",
+      reply_markup: getReplyKeyboard(lang),
+    });
+    return;
+  }
+
+  // /history or Scan History button
+  if (lowerText.startsWith("/history") || lowerText.includes("ប្រវត្តិស្កេន") || lowerText.includes("scan history")) {
+    const histText =
+      lang === "km"
+        ? `📋 *CyberGuard AI — ប្រវត្តិស្កេន*
+
+ដើម្បីធានាឯកជនភាពកម្រិតខ្ពស់ (Zero-Retention Security Policy) បូតដំណើរការលើ Serverless Edge ដោយមិនរក្សាទុកឯកសារចាស់របស់អ្នកលើប្រព័ន្ធឡើយ។
+ប្រសិនបើអ្នកបានភ្ជាប់ Scanner Backend មូលដ្ឋាន អ្នកអាចមើល Audit Logs បាននៅលើ Web Dashboard។`
+        : `📋 *CyberGuard AI — Scan History*
+
+Under our strict Zero-Retention Privacy Policy, scans on Cloudflare Workers operate statelessly without permanent file storage.
+If your local Scanner Backend is running, you can view the complete scan records on the Web Dashboard.`;
+
+    await sendTelegramMessage(token, {
+      chat_id: chatId,
+      text: histText,
       parse_mode: "Markdown",
       reply_markup: getReplyKeyboard(lang),
     });
@@ -1144,6 +1250,7 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
       const arg = parts[1].toLowerCase();
       if (["en", "english", "eng"].includes(arg)) {
         USER_LANGUAGES.set(chatId, "en");
+        await updateTelegramMenuCommands(token, chatId, "en");
         await sendTelegramMessage(token, {
           chat_id: chatId,
           text: "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.",
@@ -1153,6 +1260,7 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
         return;
       } else if (["km", "khmer", "ខ្មែរ"].includes(arg)) {
         USER_LANGUAGES.set(chatId, "km");
+        await updateTelegramMenuCommands(token, chatId, "km");
         await sendTelegramMessage(token, {
           chat_id: chatId,
           text: "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nMenu និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។",
@@ -1187,13 +1295,22 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
 
   // /ghidra or Ghidra button
   if (lowerText.startsWith("/ghidra") || lowerText.includes("ghidra")) {
-    await sendTelegramMessage(token, {
-      chat_id: chatId,
-      text: `🔬 *Ghidra Headless SRE & Decompiler Engine*
+    const ghidraMsg =
+      lang === "km"
+        ? `🔬 *Ghidra Headless SRE & Decompiler Engine*
 
 ដើម្បី Decompile និងវិភាគកូដ Executable (.exe, .dll, .elf)៖
 ១. សូមផ្ញើឯកសារ Executable មកកាន់ Chat នេះ។
-២. ប្រព័ន្ធនឹងធ្វើការ Decompile មុខងារ Entry point ទៅជា pseudo-C code និងស្វែងរក API Cross-references ដែលមានហានិភ័យ។`,
+២. ប្រព័ន្ធនឹងធ្វើការ Decompile មុខងារ Entry point ទៅជា pseudo-C code និងស្វែងរក API Cross-references ដែលមានហានិភ័យ។`
+        : `🔬 *Ghidra Headless SRE & Decompiler Engine*
+
+To decompile and analyze executable binaries (.exe, .dll, .elf):
+1. Send or forward an executable file to this chat.
+2. The headless engine disassembles instructions, decompiles entry-point functions to pseudo-C code, and flags suspicious API cross-references.`;
+
+    await sendTelegramMessage(token, {
+      chat_id: chatId,
+      text: ghidraMsg,
       parse_mode: "Markdown",
       reply_markup: getReplyKeyboard(lang),
     });
@@ -1205,17 +1322,27 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
   let queryText = text;
   if (lowerText.startsWith("/ask")) {
     queryText = text.replace(/^\/ask\s*/i, "").trim();
-  } else if (lowerText.includes("សួរ ai security")) {
+  }
+
+  if (
+    lowerText === "/ask" ||
+    lowerText.includes("សួរ ai security") ||
+    lowerText.includes("ask ai security") ||
+    !queryText
+  ) {
+    const askPrompt =
+      lang === "km"
+        ? `💬 *សូមវាយសំណួរពាក់ព័ន្ធនឹងសន្តិសុខសាយប័រ ឬមេរោគ៖*\n\n_ឧទាហរណ៍ ៖ \`តើមេរោគ Ransomware ការពារយ៉ាងដូចម្តេច?\`_`
+        : `💬 *Please type your cybersecurity or malware question:*\n\n_Example: \`How do I protect against Ransomware attacks?\`_`;
+
     await sendTelegramMessage(token, {
       chat_id: chatId,
-      text: `💬 *សូមវាយសំណួរពាក់ព័ន្ធនឹងសន្តិសុខសាយប័រ ឬមេរោគ៖*\n\n_ឧទាហរណ៍៖ \`តើមេរោគ Ransomware ការពារយ៉ាងដូចម្តេច?\`_`,
+      text: askPrompt,
       parse_mode: "Markdown",
       reply_markup: getReplyKeyboard(lang),
     });
     return;
   }
-
-  if (!queryText) return;
 
   const aiAnswer = await askGemini(env.GEMINI_API_KEY, queryText, env.GEMINI_MODEL || "gemini-3-flash-preview", lang);
   await sendTelegramMessage(token, {

@@ -9,6 +9,7 @@ import {
   sendTelegramMessage,
   sendChatAction,
   answerCallbackQuery,
+  updateTelegramMenuCommands,
   getReplyKeyboard,
   getTelegramFile,
   downloadTelegramFile,
@@ -39,10 +40,11 @@ export async function routeTelegramUpdate(
       USER_LANGUAGES.set(chatId, newLang);
 
       await answerCallbackQuery(token, cb.id, newLang === "km" ? "ភាសាខ្មែរ 🇰🇭" : "English 🇬🇧");
+      await updateTelegramMenuCommands(token, chatId, newLang);
 
       const confirmMsg =
         newLang === "km"
-          ? "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nប៊ូតុង និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។"
+          ? "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nMenu និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។"
           : "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.";
 
       await sendTelegramMessage(token, {
@@ -358,6 +360,7 @@ Under our strict Zero-Retention Privacy Policy, scans on Cloudflare Workers oper
       const arg = parts[1].toLowerCase();
       if (["en", "english", "eng"].includes(arg)) {
         USER_LANGUAGES.set(chatId, "en");
+        await updateTelegramMenuCommands(token, chatId, "en");
         await sendTelegramMessage(token, {
           chat_id: chatId,
           text: "✅ Language switched to *English 🇬🇧*!\n\nAll buttons, menus, and scan reports will now be in English.",
@@ -367,6 +370,7 @@ Under our strict Zero-Retention Privacy Policy, scans on Cloudflare Workers oper
         return;
       } else if (["km", "khmer", "ខ្មែរ"].includes(arg)) {
         USER_LANGUAGES.set(chatId, "km");
+        await updateTelegramMenuCommands(token, chatId, "km");
         await sendTelegramMessage(token, {
           chat_id: chatId,
           text: "✅ បានផ្លាស់ប្តូរភាសាទៅជា *ភាសាខ្មែរ 🇰🇭* រួចរាល់!\n\nMenu និងរបាយការណ៍ស្កេនទាំងអស់នឹងបង្ហាញជាភាសាខ្មែរ។",
@@ -493,11 +497,16 @@ _You can also paste a URL directly or use \`/check <url or message>\`!_`;
     queryText = text.replace(/^\/ask\s*/i, "").trim();
   }
 
-  if (!queryText) {
+  if (
+    lowerText === "/ask" ||
+    lowerText.includes("សួរ ai security") ||
+    lowerText.includes("ask ai security") ||
+    !queryText
+  ) {
     const askPrompt =
       lang === "km"
-        ? `💬 *សូមសួរសំណួរពាក់ព័ន្ធនឹងសន្តិសុខសាយប័រ ឬមេរោគ៖*\n\n_ឧទាហរណ៍៖ \`/ask តើមេរោគ Ransomware ការពារយ៉ាងដូចម្តេច?\`_`
-        : `💬 *Please type your cybersecurity or malware question:*\n\n_Example: \`/ask How do I prevent ransomware attacks?\`_`;
+        ? `💬 *សូមវាយសំណួរពាក់ព័ន្ធនឹងសន្តិសុខសាយប័រ ឬមេរោគ៖*\n\n_ឧទាហរណ៍ ៖ \`តើមេរោគ Ransomware ការពារយ៉ាងដូចម្តេច?\`_`
+        : `💬 *Please type your cybersecurity or malware question:*\n\n_Example: \`How do I protect against Ransomware attacks?\`_`;
     await sendTelegramMessage(token, {
       chat_id: chatId,
       text: askPrompt,

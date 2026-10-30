@@ -157,6 +157,55 @@ export async function answerCallbackQuery(
 }
 
 /**
+ * Dynamically updates Telegram's official Bot Menu commands for a specific chat.
+ */
+export async function updateTelegramMenuCommands(
+  token: string,
+  chatId: number,
+  lang: string = "km"
+): Promise<void> {
+  const commands =
+    lang === "km"
+      ? [
+          { command: "start", description: "🚀 ចាប់ផ្តើម Bot និងបើកផ្ទាំងមឺនុយមេ" },
+          { command: "scan", description: "🔍 ស្កេនឯកសារស្វែងរកមេរោគ" },
+          { command: "check", description: "🔗 វិភាគ Link & សារបន្លំ (Phishing/Scam)" },
+          { command: "status", description: "⚙️ ពិនិត្យស្ថានភាពម៉ាស៊ីនស្កេន និង AI" },
+          { command: "ask", description: "💬 សួរសំណួរសន្តិសុខសាយប័រជាមួយ AI" },
+          { command: "ghidra", description: "🔬 វិភាគស៊ីជម្រៅ និង Decompile (Ghidra)" },
+          { command: "history", description: "📋 មើលប្រវត្តិឯកសារដែលបានស្កេន" },
+          { command: "privacy", description: "🔐 គោលការណ៍ឯកជនភាព និងសុវត្ថិភាព" },
+          { command: "lang", description: "🌐 ផ្លាស់ប្តូរភាសា (English / ខ្មែរ)" },
+          { command: "help", description: "📚 ការណែនាំ និងរបៀបប្រើប្រាស់" },
+        ]
+      : [
+          { command: "start", description: "🚀 Start bot and show main menu" },
+          { command: "scan", description: "🔍 Scan a file for malware & threats" },
+          { command: "check", description: "🔗 Check suspicious links & phishing" },
+          { command: "status", description: "⚙️ Check scanner engines & AI health" },
+          { command: "ask", description: "💬 Ask cybersecurity AI assistant" },
+          { command: "ghidra", description: "🔬 Decompile binary with Ghidra SRE" },
+          { command: "history", description: "📋 View your recent scan history" },
+          { command: "privacy", description: "🔐 Review zero-retention privacy policy" },
+          { command: "lang", description: "🌐 Switch language (English / ខ្មែរ)" },
+          { command: "help", description: "📚 User guide and risk levels explained" },
+        ];
+
+  try {
+    await fetch(`${TELEGRAM_API_BASE}/bot${token}/setMyCommands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commands,
+        scope: { type: "chat", chat_id: chatId },
+      }),
+    });
+  } catch {
+    // Non-critical action
+  }
+}
+
+/**
  * Returns the persistent bottom keyboard matching the user's preferred language.
  */
 export function getReplyKeyboard(lang: string = "km"): ReplyKeyboardMarkup {
