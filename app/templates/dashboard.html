@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberGuard AI — Mission Control & Scanner Hub</title>
+  <style>
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #0f172a;
+      --bg-card: rgba(15, 23, 42, 0.75);
+      --border-card: rgba(56, 189, 248, 0.2);
+      --border-card-hover: rgba(56, 189, 248, 0.5);
+      --primary: #06b6d4;
+      --primary-hover: #0891b2;
+      --accent: #3b82f6;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at 50% 0%, #172554 0%, var(--bg-base) 70%);
+      color: var(--text-main);
+      font-family: var(--font);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .shield-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #06b6d4, #3b82f6);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+    }
+
+    .shield-icon svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: white;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34d399;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 9999px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(6, 182, 212, 0.3);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 4px 16px rgba(6, 182, 212, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text-main);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .btn-outline:hover {
+      background: rgba(30, 41, 59, 0.8);
+      border-color: var(--primary);
+    }
+
+    .btn-success {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .btn-success:hover {
+      background: rgba(16, 185, 129, 0.3);
+    }
+
+    /* Grid Sections */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-card);
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+      transition: border-color 0.2s ease;
+    }
+    .card:hover {
+      border-color: var(--border-card-hover);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-live {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge-info {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .url-display-box {
+      display: flex;
+      align-items: center;
+      background: #060911;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+
+    .url-text {
+      flex: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88rem;
+      color: #38bdf8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: all;
+    }
+
+    .card-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    /* Explanation Banner */
+    .info-banner {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-left: 4px solid var(--accent);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 24px;
+    }
+
+    .info-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #60a5fa;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .info-body {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .info-body strong {
+      color: var(--text-main);
+    }
+
+    .code-pill {
+      background: #1e293b;
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.82rem;
+    }
+
+    /* Engines Grid */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 28px 0 16px 0;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .engines-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .engine-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+    .engine-card:hover {
+      background: rgba(30, 41, 59, 0.5);
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+
+    .engine-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .engine-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+
+    .engine-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .engine-status-tag {
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tag-online {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .tag-offline {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .tag-disabled {
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    /* Interactive Test Tools */
+    .tools-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      padding-bottom: 10px;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 8px 14px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .dropzone {
+      border: 2px dashed rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(6, 182, 212, 0.08);
+    }
+
+    .dropzone svg {
+      width: 44px;
+      height: 44px;
+      stroke: var(--primary);
+      margin-bottom: 12px;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .text-input {
+      flex: 1;
+      background: #060911;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      color: #fff;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .text-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+    }
+
+    .result-box {
+      margin-top: 18px;
+      background: #060911;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 14px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      max-height: 280px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      display: none;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f172a;
+      border: 1px solid #10b981;
+      color: #34d399;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="shield-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div>
+          <h1>CyberGuard AI — Mission Control</h1>
+          <div class="subtitle">Zero-Trust Hybrid Threat Inspection & Telemetry Hub</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="status-pill">
+          <div class="status-dot"></div>
+          <span id="gateway-status">ALL SYSTEMS ONLINE</span>
+        </div>
+        <button class="btn btn-outline" onclick="fetchEngineStatus()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <!-- Top Action Cards -->
+    <div class="grid-2">
+      <!-- Tunnel Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            Active Cloudflare Tunnel URL
+          </div>
+          <span class="badge badge-live">LIVE TUNNEL</span>
+        </div>
+        <div class="url-display-box">
+          <span class="url-text" id="tunnel-url-text">Loading tunnel...</span>
+        </div>
+        <div class="card-buttons">
+          <button class="btn btn-primary" onclick="copyTunnelUrl()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy Tunnel URL
+          </button>
+          <a href="https://dash.cloudflare.com/" target="_blank" class="btn btn-outline">
+            Open Cloudflare Settings ↗
+          </a>
+        </div>
+      </div>
+
+      <!-- Worker.js Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Cloudflare Worker Gateway
+          </div>
+          <span class="badge badge-info">gemini-3-flash-preview</span>
+        </div>
+        <div class="url-display-box">
+          <span class="url-text">https://telegram-scan-bot.vanhonghorn37.workers.dev</span>
+        </div>
+        <div class="card-buttons">
+          <button class="btn btn-primary" onclick="copyWorkerCode()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Copy worker.js Code
+          </button>
+          <a href="https://dash.cloudflare.com/" target="_blank" class="btn btn-outline">
+            Worker Quick Edit ↗
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Explanation & Best Practice Banner -->
+    <div class="info-banner">
+      <div class="info-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        Why did worker.js update & How to avoid re-deploying in the future?
+      </div>
+      <div class="info-body">
+        <p><strong>1. Why worker.js had updates yesterday:</strong> We added major new features (Link & Phishing Inspection engine, brand impersonation for ABA/ACLEDA/Telegram, and upgraded Google Gemini AI token budget to 2048 to prevent truncated answers).</p>
+        <p style="margin-top:6px;"><strong>2. Why the Tunnel URL changes:</strong> Quick tunnels via <span class="code-pill">trycloudflare.com</span> are free and ephemeral; they renew whenever cloudflared restarts or after ~12 hours.</p>
+        <p style="margin-top:6px;"><strong>3. Best Practice (Set Variable Once):</strong> In your Cloudflare Worker dashboard ➡️ <strong>Settings</strong> ➡️ <strong>Variables and Secrets</strong>, set <span class="code-pill">SCANNER_SERVICE_URL</span> = <em>your copied tunnel URL</em>. That way you <strong>NEVER have to edit worker.js code again</strong> when the tunnel changes!</p>
+      </div>
+    </div>
+
+    <!-- Engines Grid -->
+    <div class="section-header">
+      <div class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        12 Threat Inspection Engines
+      </div>
+      <span style="font-size: 0.8rem; color: var(--text-muted);">Real-Time Scanner Health</span>
+    </div>
+
+    <div class="engines-grid" id="engines-container">
+      <!-- Loaded dynamically via JS -->
+      <div class="engine-card">Loading engine diagnostics...</div>
+    </div>
+
+    <!-- Interactive Testing Playground -->
+    <div class="tools-card">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('file-tab')">📁 File Threat Scanner</button>
+        <button class="tab-btn" onclick="switchTab('url-tab')">🔗 URL & Phishing Analyzer</button>
+      </div>
+
+      <!-- File Scan Tab -->
+      <div id="file-tab" class="tab-content active">
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <div style="font-weight: 600; font-size: 1rem; margin-bottom: 4px;">Click to select or drag & drop a file to scan</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Supports .exe, .pdf, .docx, .zip, .apk, scripts (max 20 MB)</div>
+          <input type="file" id="file-input" style="display: none;" onchange="handleFileSelected(event)">
+        </div>
+        <div id="file-result" class="result-box"></div>
+      </div>
+
+      <!-- URL & Phishing Tab -->
+      <div id="url-tab" class="tab-content">
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
+          Enter any URL or suspicious message text to analyze with Zero-Trust Heuristics & VirusTotal:
+        </div>
+        <div class="input-group">
+          <input type="text" id="target-input" class="text-input" placeholder="e.g., https://telegram-login-verify.xyz/login or paste a scam SMS..." value="https://bit.ly/claim-free-telegram-gift">
+          <button class="btn btn-primary" onclick="analyzeTarget()">Inspect URL</button>
+        </div>
+        <div id="url-result" class="result-box"></div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      CyberGuard AI Zero-Trust Threat Defense Platform • Running on Local Host & Cloudflare Edge
+    </footer>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+    <span id="toast-text">Copied to clipboard!</span>
+  </div>
+
+  <script>
+    let activeTunnelUrl = "";
+
+    async function initDashboard() {
+      await fetchTunnelInfo();
+      await fetchEngineStatus();
+      setInterval(fetchEngineStatus, 15000);
+    }
+
+    async function fetchTunnelInfo() {
+      try {
+        const res = await fetch('/api/tunnel');
+        if (res.ok) {
+          const data = await res.json();
+          activeTunnelUrl = data.tunnel_url || "https://warning-gallery-rss-autos.trycloudflare.com";
+          document.getElementById('tunnel-url-text').innerText = activeTunnelUrl;
+        } else {
+          document.getElementById('tunnel-url-text').innerText = "https://warning-gallery-rss-autos.trycloudflare.com";
+        }
+      } catch {
+        activeTunnelUrl = "https://warning-gallery-rss-autos.trycloudflare.com";
+        document.getElementById('tunnel-url-text').innerText = activeTunnelUrl;
+      }
+    }
+
+    async function fetchEngineStatus() {
+      try {
+        const res = await fetch('/status');
+        if (!res.ok) throw new Error("Status API returned " + res.status);
+        const data = await res.json();
+        renderEngines(data.engines || {});
+      } catch (e) {
+        console.error("Failed to fetch engine status:", e);
+      }
+    }
+
+    function renderEngines(engines) {
+      const engineMeta = {
+        clamav: { name: "ClamAV Antivirus", desc: "Signature & Stream Scanning" },
+        yara: { name: "YARA Engine", desc: "Pattern & Malware Heuristics" },
+        virustotal: { name: "VirusTotal Intel", desc: "Crowdsourced Threat Intel" },
+        oletools: { name: "oletools", desc: "Office VBA Macro De-obfuscation" },
+        pdfid: { name: "PDFiD", desc: "PDF Stream & JS Traversal" },
+        exiftool: { name: "ExifTool", desc: "Metadata & Polyglot Analysis" },
+        capa: { name: "capa / PE Engine", desc: "Executable Capability Analysis" },
+        diec: { name: "Detect It Easy", desc: "Packer, Compiler & Section Info" },
+        ghidra: { name: "Ghidra SRE", desc: "Headless Binary Decompiler" },
+        gitleaks: { name: "Gitleaks", desc: "Secret & API Key Extraction" },
+        database: { name: "Audit Database", desc: "SQLite WAL Audit Ledger" },
+      };
+
+      const container = document.getElementById('engines-container');
+      container.innerHTML = "";
+
+      for (const [key, meta] of Object.entries(engineMeta)) {
+        const eng = engines[key] || { status: "OFFLINE" };
+        const status = (eng.status || "OFFLINE").toUpperCase();
+
+        let tagClass = "tag-offline";
+        let label = status;
+
+        if (status === "ONLINE" || status === "READY" || status === "OPERATIONAL") {
+          tagClass = "tag-online";
+          label = "🟢 " + status;
+        } else if (status === "CONFIGURED") {
+          tagClass = "tag-online";
+          label = "🟢 READY";
+        } else if (status === "DISABLED") {
+          tagClass = "tag-disabled";
+          label = "⚪ DISABLED";
+        } else {
+          tagClass = "tag-offline";
+          label = "🔴 " + status;
+        }
+
+        const card = document.createElement('div');
+        card.className = "engine-card";
+        card.innerHTML = `
+          <div class="engine-info">
+            <div class="engine-name">${meta.name}</div>
+            <div class="engine-desc">${meta.desc}</div>
+          </div>
+          <div class="engine-status-tag ${tagClass}">${label}</div>
+        `;
+        container.appendChild(card);
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-text').innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
+    }
+
+    function copyTunnelUrl() {
+      const text = document.getElementById('tunnel-url-text').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Tunnel URL copied! Paste into Cloudflare Variables.");
+      });
+    }
+
+    async function copyWorkerCode() {
+      try {
+        const res = await fetch('/worker.js');
+        if (res.ok) {
+          const code = await res.text();
+          await navigator.clipboard.writeText(code);
+          showToast("worker.js code copied to Clipboard!");
+        } else {
+          showToast("Failed to fetch worker.js from server.");
+        }
+      } catch (err) {
+        showToast("Error copying worker.js: " + err.message);
+      }
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    // Interactive File Upload
+    async function handleFileSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const resultBox = document.getElementById('file-result');
+      resultBox.style.display = "block";
+      resultBox.innerText = `⏳ Submitting "${file.name}" (${(file.size / 1024).toFixed(1)} KB) to ClamAV, YARA & Risk Engine...`;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/scan", { method: "POST", body: formData });
+        const data = await res.json();
+        resultBox.innerText = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultBox.innerText = "❌ Scan error: " + err.message;
+      }
+    }
+
+    // Interactive URL Inspection
+    async function analyzeTarget() {
+      const target = document.getElementById('target-input').value.trim();
+      if (!target) return;
+
+      const resultBox = document.getElementById('url-result');
+      resultBox.style.display = "block";
+      resultBox.innerText = "⏳ Inspecting link heuristics, brand impersonation & VirusTotal threat intel...";
+
+      try {
+        const res = await fetch("/check_url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: target, text: target }),
+        });
+        const data = await res.json();
+        resultBox.innerText = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultBox.innerText = "❌ Analysis error: " + err.message;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initDashboard);
+  </script>
+</body>
+</html>

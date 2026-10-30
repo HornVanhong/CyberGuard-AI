@@ -39,8 +39,31 @@ from app.utils.logger import logger
 from dataclasses import asdict
 
 
+def get_active_tunnel_url() -> str:
+    """Reads the current active Cloudflare tunnel URL."""
+    root = Path(__file__).parent.parent
+    p = root / "tunnel_url.txt"
+    if p.exists():
+        try:
+            url = p.read_text(encoding="utf-8-sig").strip()
+            if url.startswith("http"):
+                return url
+        except Exception:
+            pass
+    w = root / "worker" / "worker.js"
+    if w.exists():
+        try:
+            import re
+            m = re.search(r'DEFAULT_SCANNER_URL\s*=\s*["\'](https://[^"\']+)["\']', w.read_text(encoding="utf-8"))
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return "https://warning-gallery-rss-autos.trycloudflare.com"
+
+
 class ScannerAPIHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for Cloudflare Worker scanner integration."""
+    """HTTP request handler for Cloudflare Worker scanner integration & Web Dashboard."""
 
     def _set_headers(self, status: int = 200, content_type: str = "application/json"):
         self.send_response(status)
@@ -62,7 +85,38 @@ class ScannerAPIHandler(BaseHTTPRequestHandler):
         return auth_header.strip() == expected
 
     def do_GET(self):
-        """GET /status or /health - returns health of all 12 engines."""
+        """GET router for Dashboard, Tunnel info, worker.js, and health/status checks."""
+        accept_header = self.headers.get("Accept", "")
+        is_html_request = "text/html" in accept_header
+
+        # 1. Web Dashboard (GET /dashboard or browser visiting GET /)
+        if self.path in ("/dashboard", "/dashboard/") or (self.path == "/" and is_html_request):
+            template_path = Path(__file__).parent / "templates" / "dashboard.html"
+            if template_path.exists():
+                html_content = template_path.read_text(encoding="utf-8")
+                self._set_headers(200, "text/html; charset=utf-8")
+                self.wfile.write(html_content.encode("utf-8"))
+                return
+
+        # 2. Dynamic Tunnel URL info (GET /api/tunnel)
+        if self.path == "/api/tunnel":
+            self._set_headers(200)
+            self.wfile.write(json.dumps({
+                "tunnel_url": get_active_tunnel_url(),
+                "status": "online"
+            }).encode("utf-8"))
+            return
+
+        # 3. Serve raw worker.js for 1-click clipboard copying (GET /worker.js)
+        if self.path == "/worker.js":
+            worker_path = Path(__file__).parent.parent / "worker" / "worker.js"
+            if worker_path.exists():
+                worker_code = worker_path.read_text(encoding="utf-8")
+                self._set_headers(200, "text/javascript; charset=utf-8")
+                self.wfile.write(worker_code.encode("utf-8"))
+                return
+
+        # 4. JSON Health / Status endpoint (GET /status or GET /health)
         if self.path in ("/", "/health", "/status"):
             if not self._verify_auth():
                 self._set_headers(401)
